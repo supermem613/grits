@@ -1,6 +1,6 @@
 # grits
 
-> Typed, backend-independent Git repository API for filesystem and in-memory implementations.
+> Typed Git repository API for filesystem and in-memory repositories.
 
 ## Quick start
 
@@ -11,6 +11,75 @@ npm install
 npm run build
 npm link    # makes `grits` available globally
 ```
+
+## Library API
+
+The package root is the public Grits library entry. Import `createGrits` and
+`GritsError` from `grits`:
+
+```ts
+import { createGrits, GritsError } from "grits";
+```
+
+Choose a repository explicitly when constructing the API. Filesystem
+repositories require a non-empty path:
+
+```ts
+const filesystemGrits = createGrits({
+  repository: { kind: "filesystem", path: "/path/to/repository" },
+});
+```
+
+For an in-memory repository, omit the optional seed or provide one:
+
+```ts
+const memoryGrits = createGrits({
+  repository: { kind: "memory" },
+});
+```
+
+`createGrits` is synchronous and lazy: it returns the API object immediately
+without opening the repository. The returned `capabilities` profile is
+readonly and reports the selected repository kind plus the `objects.read` and
+`refs.resolve` capability statuses.
+
+The first read slice supports `objects.read` and `refs.resolve` for both
+explicit filesystem and memory repositories. The operations are asynchronous:
+
+```ts
+const object = await memoryGrits.objects.read(objectId);
+const ref = await memoryGrits.refs.resolve("HEAD");
+```
+
+Memory repositories read only their optional seeded objects and refs. An
+unknown ref resolves to `null`; an unknown object rejects with the typed
+`GritsError` code `NOT_FOUND`. Memory repositories never fall back to a
+filesystem or Git implementation.
+
+Filesystem repository access is lazy: `createGrits` returns synchronously, and
+repository access begins when an asynchronous read or ref-resolution operation
+is started. Filesystem reads expose blob, tree, and commit domain values, while
+ref resolutions include the ref name and its object ID. Filesystem repository
+or repository-access process failures reject with `GritsError` code
+`REPOSITORY_UNAVAILABLE`.
+
+`UNSUPPORTED_CAPABILITY` is the typed code reserved for future operations that
+are not supported. Check the error's `code` and `operation` fields when
+handling typed failures:
+
+```ts
+try {
+  await memoryGrits.objects.read(objectId);
+} catch (error) {
+  if (error instanceof GritsError && error.code === "NOT_FOUND") {
+    console.log(`Object not found during ${error.operation}`);
+  }
+}
+```
+
+The library entry and the existing CLI are separate surfaces. Import the
+library from `grits` in application code; use the existing `grits` commands
+(`grits --help`, `grits doctor`, and `grits schema`) for command-line use.
 
 ## Commands
 

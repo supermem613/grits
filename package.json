@@ -6,6 +6,13 @@
   "bin": {
     "grits": "./dist/cli.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
   "scripts": {
     "prebuild": "eslint src/ test/ && tsc --noEmit -p test/tsconfig.json",
     "build": "tsc",
