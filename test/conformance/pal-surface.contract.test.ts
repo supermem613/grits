@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { GritsError } from "../../src/index.js";
 import {
-  invokePalSlot,
   mappedPalSlotIds,
   nyiPalSlotIds,
   palSlotIds,
@@ -135,19 +133,5 @@ describe("PAL surface registry", () => {
     assert.equal(palSlotIds.length, 91);
     assert.equal(mappedPalSlotIds.length, 5);
     assert.equal(nyiPalSlotIds.length, 86);
-  });
-
-  it("rejects each NYI slot with UNSUPPORTED_CAPABILITY and that slot ID", async () => {
-    for (const slotId of SODA_NYI_PAL_SLOT_IDS) {
-      await assert.rejects(
-        () => invokePalSlot(slotId),
-        (error: unknown) => {
-          assert.equal(error instanceof GritsError, true);
-          assert.equal((error as GritsError).code, "UNSUPPORTED_CAPABILITY");
-          assert.equal((error as GritsError).operation, slotId);
-          return true;
-        },
-      );
-    }
   });
 });

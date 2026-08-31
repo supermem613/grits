@@ -128,8 +128,8 @@ export async function invokePalSlot(slotId: string): Promise<never> {
   }
 
   throw new GritsError(
-    "UNSUPPORTED_CAPABILITY",
-    `Capability ${slotId} is not implemented.`,
+    "NYI",
+    `NYI: ${slotId} is not implemented.`,
     slotId,
   );
 }

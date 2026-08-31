@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { GritsError } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
 const NYI_SYSTEM_SLOTS = [
@@ -44,19 +43,13 @@ function withOracleRepo<T>(run: (repositoryPath: string) => T | Promise<T>): Pro
 
 describe("system family goldens", () => {
   for (const slotId of NYI_SYSTEM_SLOTS) {
-    it(`spawns git then rejects ${slotId} as NYI`, async () => {
+    it(`matches git oracle for ${slotId}`, async () => {
       await withOracleRepo(async (repositoryPath) => {
         const version = gitId(repositoryPath, ["--version"]);
         assert.match(version, /^git version /);
-        await assert.rejects(
-          () => invokePalSlot(slotId),
-          (error: unknown) => {
-            assert.equal(error instanceof GritsError, true);
-            assert.equal((error as GritsError).code, "UNSUPPORTED_CAPABILITY");
-            assert.equal((error as GritsError).operation, slotId);
-            return true;
-          },
-        );
+        const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+        assert.match(headId, /^[0-9a-f]{40}$/);
+        assert.equal(await invokePalSlot(slotId), headId);
       });
     });
   }
