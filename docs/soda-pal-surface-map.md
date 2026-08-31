@@ -22,21 +22,10 @@ The map has three dispositions:
 | --- | --- | --- |
 | `objects.read` | `catBlob`, `showBlob`, `showBlobAsync` | Read object content through one Grits-owned object-read contract. The asynchronous member does not create a second surface. |
 | `refs.resolve` | `resolveRev` | Resolve a revision or reference name to the Grits-owned reference identity used by later read operations. |
+| `history.isAncestor` | `isAncestor` | Compare two commit IDs and return whether the first is an ancestor of the second, including the same-commit case. No presentation or repository mutation is part of this operation. |
 
 These mappings intentionally cover read behavior only. Object creation,
 reference mutation, formatting, and repository-state changes remain deferred.
-
-## Next Grits-owned operation
-
-### `history.isAncestor`
-
-`history.isAncestor` is the next Grits-owned operation. It accepts two
-commit IDs, reads repository history without changing it, and returns a
-boolean indicating whether the first commit is an ancestor of the second.
-The commit-ID ordering is significant: `isAncestor(ancestor, descendant)`
-returns `true` exactly for the ancestor relation, while the reverse ordering
-does not imply the same result. No presentation or repository mutation is
-part of this operation.
 
 ## Complete inventory
 
@@ -127,7 +116,7 @@ part of this operation.
 | `resolveCommit` | Deferred | Commit-specific resolution needs a future repository-feature contract. |
 | `revListCount` | Deferred | History counting needs a future repository-feature contract. |
 | `countCommits` | Deferred | History counting needs a future repository-feature contract. |
-| `isAncestor` | Next: `history.isAncestor` | Read-only comparison of two commit IDs with a boolean ancestor result is the next selected slice. |
+| `isAncestor` | Completed mapping: `history.isAncestor` | Read-only comparison of two commit IDs with a boolean ancestor result is covered by the completed history mapping. |
 | `firstCommit` | Deferred | Root-commit discovery needs a future repository-feature contract. |
 | `lookupBlobAt` | Deferred | Historical path-to-object lookup needs a future repository-feature contract. |
 | `lookupBlobsAtBatch` | Deferred | Batched historical lookup needs a future repository-feature contract and batching rules. |
@@ -195,10 +184,9 @@ part of this operation.
 
 ## Boundary decision
 
-The current Grits-owned surface is limited to the completed `objects.read`
-and `refs.resolve` mappings, with `history.isAncestor` selected as the next
-read-only history operation. Every remaining inventory member is **Deferred**
-until its future domain contract, mutation and atomicity policy, repository
-feature contract, transport contract, or separate non-Git system boundary is
-explicitly established. This document does not claim support for any deferred
-member.
+The current Grits-owned surface is limited to the completed `objects.read`,
+`refs.resolve`, and `history.isAncestor` mappings. Every remaining inventory
+member is **Deferred** until its future domain contract, mutation and atomicity
+policy, repository feature contract, transport contract, or separate non-Git
+system boundary is explicitly established. This document does not claim support
+for any deferred member.

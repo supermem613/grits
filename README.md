@@ -40,8 +40,8 @@ const memoryGrits = createGrits({
 
 `createGrits` is synchronous and lazy: it returns the API object immediately
 without opening the repository. The returned `capabilities` profile is
-readonly and reports the selected repository kind plus the `objects.read` and
-`refs.resolve` capability statuses.
+readonly and reports the selected repository kind plus the `objects.read`,
+`refs.resolve`, and `history.isAncestor` capability statuses.
 
 The first read slice supports `objects.read` and `refs.resolve` for both
 explicit filesystem and memory repositories. The operations are asynchronous:
