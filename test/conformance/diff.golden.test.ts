@@ -35,6 +35,7 @@ function withOracleRepo<T>(
   return Promise.resolve()
     .then(() => {
       gitId(repositoryPath, ["init"]);
+      gitId(repositoryPath, ["config", "core.autocrlf", "false"]);
       gitId(repositoryPath, ["config", "user.email", "grits@example.test"]);
       gitId(repositoryPath, ["config", "user.name", "Grits Test"]);
       writeFileSync(join(repositoryPath, "diff-golden.txt"), "first\n", "utf8");
@@ -53,6 +54,18 @@ function withOracleRepo<T>(
 }
 
 describe("diff family goldens", () => {
+  it("disables autocrlf in the oracle repo", async () => {
+    await withOracleRepo((repositoryPath) => {
+      let autocrlf = "";
+      try {
+        autocrlf = gitId(repositoryPath, ["config", "--local", "--get", "core.autocrlf"]);
+      } catch {
+        autocrlf = "";
+      }
+      assert.equal(autocrlf, "false");
+    });
+  });
+
   for (const slotId of NYI_DIFF_SLOTS) {
     it(`spawns git then rejects ${slotId} as NYI`, async () => {
       await withOracleRepo(async (repositoryPath, firstId, secondId) => {
