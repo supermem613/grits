@@ -79,4 +79,52 @@ export class MemoryAdapter implements RepositoryAdapter {
   async resolve(name: RefName): Promise<RefResolution | null> {
     return this.refs.get(name) ?? null;
   }
+
+  async isAncestor(ancestor: ObjectId, descendant: ObjectId): Promise<boolean> {
+    const ancestorObject = this.objects.get(ancestor);
+    const descendantObject = this.objects.get(descendant);
+    if (ancestorObject?.kind !== "commit" || descendantObject?.kind !== "commit") {
+      throw new GritsError(
+        "NOT_FOUND",
+        "The requested commit was not found.",
+        "history.isAncestor",
+      );
+    }
+
+    const visited = new Set<ObjectId>();
+    const pending = [descendantObject.id];
+    while (pending.length > 0) {
+      const current = pending.pop();
+      if (current === undefined || visited.has(current)) {
+        continue;
+      }
+      visited.add(current);
+
+      if (current === ancestorObject.id) {
+        return true;
+      }
+
+      const currentObject = this.objects.get(current);
+      if (currentObject?.kind !== "commit") {
+        throw new GritsError(
+          "NOT_FOUND",
+          "The requested commit was not found.",
+          "history.isAncestor",
+        );
+      }
+
+      for (const parent of currentObject.parents) {
+        if (this.objects.get(parent)?.kind !== "commit") {
+          throw new GritsError(
+            "NOT_FOUND",
+            "The requested commit was not found.",
+            "history.isAncestor",
+          );
+        }
+        pending.push(parent);
+      }
+    }
+
+    return false;
+  }
 }

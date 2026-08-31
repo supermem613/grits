@@ -17,10 +17,12 @@ describe("Grits public API contract", () => {
     assert.equal(grits.capabilities.repository, "memory");
     assert.equal(grits.capabilities.objects.read, "supported");
     assert.equal(grits.capabilities.refs.resolve, "supported");
+    assert.equal(grits.capabilities.history.isAncestor, "supported");
     assert.equal(Object.isFrozen(grits), true);
     assert.equal(Object.isFrozen(grits.capabilities), true);
     assert.equal(Object.isFrozen(grits.objects), true);
     assert.equal(Object.isFrozen(grits.refs), true);
+    assert.equal(Object.isFrozen(grits.history), true);
 
     const read = grits.objects.read("missing-object");
     assert.equal(read instanceof Promise, true);

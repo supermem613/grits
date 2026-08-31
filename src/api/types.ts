@@ -26,6 +26,9 @@ export type CapabilityProfile = {
   readonly refs: {
     readonly resolve: CapabilityStatus;
   };
+  readonly history: {
+    readonly isAncestor: CapabilityStatus;
+  };
 };
 
 export type ObjectId = string;
@@ -77,8 +80,13 @@ export type RefsApi = {
   resolve(name: RefName): Promise<RefResolution | null>;
 };
 
+export type HistoryApi = {
+  isAncestor(ancestor: ObjectId, descendant: ObjectId): Promise<boolean>;
+};
+
 export type Grits = {
   readonly capabilities: CapabilityProfile;
   readonly objects: ObjectsApi;
   readonly refs: RefsApi;
+  readonly history: HistoryApi;
 };

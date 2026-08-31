@@ -8,6 +8,7 @@ import type {
 export interface RepositoryAdapter {
   read(id: ObjectId): Promise<GitObject>;
   resolve(name: RefName): Promise<RefResolution | null>;
+  isAncestor(ancestor: ObjectId, descendant: ObjectId): Promise<boolean>;
 }
 
 export function deepFreeze<T>(value: T): T {
