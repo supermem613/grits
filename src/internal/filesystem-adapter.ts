@@ -13,10 +13,12 @@ import { deepFreeze, type RepositoryAdapter } from "./adapter.js";
 
 class GitCommandFailure extends Error {
   readonly spawnFailure: boolean;
+  readonly exitCode: number | null;
 
-  constructor(spawnFailure: boolean) {
+  constructor(spawnFailure: boolean, exitCode: number | null) {
     super();
     this.spawnFailure = spawnFailure;
+    this.exitCode = exitCode;
   }
 }
 
@@ -33,7 +35,7 @@ function runGit(repositoryPath: string, args: readonly string[]): Promise<Buffer
       (error, stdout) => {
         if (error !== null) {
           const code = (error as NodeJS.ErrnoException).code;
-          reject(new GitCommandFailure(typeof code === "string"));
+          reject(new GitCommandFailure(typeof code === "string", typeof code === "number" ? code : null));
           return;
         }
 
@@ -51,11 +53,11 @@ function repositoryUnavailable(operation: string): GritsError {
   );
 }
 
-function notFound(): GritsError {
+function notFound(operation = "objects.read"): GritsError {
   return new GritsError(
     "NOT_FOUND",
     "The requested object was not found.",
-    "objects.read",
+    operation,
   );
 }
 
@@ -175,6 +177,48 @@ export class FilesystemAdapter implements RepositoryAdapter {
     }
   }
 
+  private async canonicalizeCommit(id: ObjectId): Promise<ObjectId> {
+    const operation = "history.isAncestor";
+    let canonical: ObjectId;
+    try {
+      canonical = canonicalId(
+        await runGit(this.repositoryPath, [
+          "rev-parse",
+          "--verify",
+          "--end-of-options",
+          `${id}^{object}`,
+        ]),
+        operation,
+      );
+    } catch (error) {
+      if (error instanceof GitCommandFailure && error.spawnFailure) {
+        throw repositoryUnavailable(operation);
+      }
+      if (error instanceof GritsError) {
+        throw error;
+      }
+      throw notFound(operation);
+    }
+
+    if (!/^[0-9a-f]+$/i.test(id) || id.toLowerCase() !== canonical.toLowerCase()) {
+      throw notFound(operation);
+    }
+
+    let type: string;
+    try {
+      type = (await runGit(this.repositoryPath, ["cat-file", "-t", canonical]))
+        .toString("utf8")
+        .trim();
+    } catch {
+      throw repositoryUnavailable(operation);
+    }
+
+    if (type !== "commit") {
+      throw notFound(operation);
+    }
+    return canonical;
+  }
+
   async read(id: ObjectId): Promise<GitObject> {
     await this.ensureRepository("objects.read");
     const canonical = await this.canonicalizeObject(id);
@@ -254,5 +298,27 @@ export class FilesystemAdapter implements RepositoryAdapter {
       name,
       objectId,
     });
+  }
+
+  async isAncestor(ancestor: ObjectId, descendant: ObjectId): Promise<boolean> {
+    const operation = "history.isAncestor";
+    await this.ensureRepository(operation);
+    const canonicalAncestor = await this.canonicalizeCommit(ancestor);
+    const canonicalDescendant = await this.canonicalizeCommit(descendant);
+
+    try {
+      await runGit(this.repositoryPath, [
+        "merge-base",
+        "--is-ancestor",
+        canonicalAncestor,
+        canonicalDescendant,
+      ]);
+      return true;
+    } catch (error) {
+      if (error instanceof GitCommandFailure && error.exitCode === 1) {
+        return false;
+      }
+      throw repositoryUnavailable(operation);
+    }
   }
 }

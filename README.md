@@ -40,8 +40,8 @@ const memoryGrits = createGrits({
 
 `createGrits` is synchronous and lazy: it returns the API object immediately
 without opening the repository. The returned `capabilities` profile is
-readonly and reports the selected repository kind plus the `objects.read` and
-`refs.resolve` capability statuses.
+readonly and reports the selected repository kind plus the `objects.read`,
+`refs.resolve`, and `history.isAncestor` capability statuses.
 
 The first read slice supports `objects.read` and `refs.resolve` for both
 explicit filesystem and memory repositories. The operations are asynchronous:
@@ -50,6 +50,24 @@ explicit filesystem and memory repositories. The operations are asynchronous:
 const object = await memoryGrits.objects.read(objectId);
 const ref = await memoryGrits.refs.resolve("HEAD");
 ```
+
+History ancestry checks are available through the same public handle:
+
+```ts
+const isAncestor = await memoryGrits.history.isAncestor(ancestorId, descendantId);
+```
+
+`history.isAncestor(ancestorId, descendantId)` accepts commit-ID strings and
+returns a boolean. The result is `true` when the ancestor commit is reachable
+from the descendant commit, including when both IDs name the same commit, and
+`false` when it is not. Memory and filesystem repositories provide the same
+commit-ID semantics. A missing or non-commit input rejects with the typed
+`GritsError` code `NOT_FOUND` for the `history.isAncestor` operation. If a
+reachable memory commit has a missing or non-commit parent link, the check also
+fails loudly with that typed error instead of returning a false result.
+Filesystem history ancestry currently accepts only full hexadecimal canonical
+commit IDs; revision expressions such as `HEAD` are not accepted yet, and
+broader revision support plus history mutation operations remain deferred.
 
 Memory repositories read only their optional seeded objects and refs. An
 unknown ref resolves to `null`; an unknown object rejects with the typed

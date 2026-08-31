@@ -7,6 +7,7 @@ import type {
   GitObject,
   Grits,
   GritsConfig,
+  HistoryApi,
   MemorySeed,
   ObjectsApi,
   RefResolution,
@@ -24,6 +25,7 @@ export type {
   GitObject,
   Grits,
   GritsConfig,
+  HistoryApi,
   MemoryRepository,
   MemorySeed,
   ObjectId,
@@ -140,6 +142,7 @@ export function createGrits(config: GritsConfig): Grits {
     repository: config.repository.kind,
     objects: Object.freeze({ read: "supported" }),
     refs: Object.freeze({ resolve: "supported" }),
+    history: Object.freeze({ isAncestor: "supported" }),
   });
 
   const objects: ObjectsApi = Object.freeze({
@@ -154,9 +157,16 @@ export function createGrits(config: GritsConfig): Grits {
     },
   });
 
+  const history: HistoryApi = Object.freeze({
+    async isAncestor(ancestor, descendant) {
+      return adapter.isAncestor(ancestor, descendant);
+    },
+  });
+
   return Object.freeze({
     capabilities,
     objects,
     refs,
+    history,
   });
 }
