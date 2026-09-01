@@ -17,6 +17,7 @@ import {
 } from "./git-object.js";
 import { readIndex, writeIndex } from "./git-index.js";
 import { rebaseAbort, rebaseOnto } from "./rebase-onto.js";
+import { fetchUpstream, pushFf, pushForceWithLease } from "./remote-sync.js";
 import { unifiedDiff } from "./unified-diff.js";
 import {
   addWorktree,
@@ -256,8 +257,26 @@ export async function runPalSlot(slotId: string, context: PalSlotContext): Promi
     case "merge.rebaseAbort":
       return rebaseAbort(requireRepo(slotId, context));
     case "remote.fetchUpstream":
+      return fetchUpstream(
+        requireRepo(slotId, context),
+        context.name ?? "origin",
+        context.rev ?? context.ref ?? (await headBranchName(requireRepo(slotId, context))),
+      );
     case "remote.pushFf":
+      return pushFf(
+        requireRepo(slotId, context),
+        context.name ?? "origin",
+        context.rev ?? context.ref ?? (await headBranchName(requireRepo(slotId, context))),
+        context.newId ?? "",
+      );
     case "remote.pushForceWithLease":
+      return pushForceWithLease(
+        requireRepo(slotId, context),
+        context.name ?? "origin",
+        context.rev ?? context.ref ?? (await headBranchName(requireRepo(slotId, context))),
+        context.newId ?? "",
+        context.oldId ?? "",
+      );
     case "system.selfUpdate":
     case "system.selfBuild":
     case "system.launchBrowserWindow":

@@ -31,15 +31,20 @@ export async function configGet(repositoryPath: string, key: string): Promise<st
 }
 
 export async function originUrl(repositoryPath: string): Promise<string> {
+  return remoteUrl(repositoryPath, "origin");
+}
+
+export async function remoteUrl(repositoryPath: string, remoteName: string): Promise<string> {
   const text = await readFile(join(gitDir(repositoryPath), "config"), "utf8");
-  let inOrigin = false;
+  const header = `[remote "${remoteName}"]`;
+  let inRemote = false;
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (trimmed.startsWith("[")) {
-      inOrigin = /^\[remote "origin"\]$/i.test(trimmed);
+      inRemote = trimmed.toLowerCase() === header.toLowerCase();
       continue;
     }
-    if (!inOrigin) {
+    if (!inRemote) {
       continue;
     }
     const match = /^url\s*=\s*(.+)$/i.exec(trimmed);
@@ -50,7 +55,7 @@ export async function originUrl(repositoryPath: string): Promise<string> {
 
   throw new GritsError(
     "NOT_FOUND",
-    "remote.origin.url was not found.",
+    `remote.${remoteName}.url was not found.`,
     "remote.originUrl",
   );
 }

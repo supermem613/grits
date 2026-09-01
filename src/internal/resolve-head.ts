@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GritsError } from "../api/errors.js";
@@ -5,7 +6,14 @@ import { GritsError } from "../api/errors.js";
 const OID = /^[0-9a-f]{40}$/i;
 
 export function gitDir(repositoryPath: string): string {
-  return join(repositoryPath, ".git");
+  const nested = join(repositoryPath, ".git");
+  if (existsSync(nested)) {
+    return nested;
+  }
+  if (existsSync(join(repositoryPath, "HEAD")) && existsSync(join(repositoryPath, "objects"))) {
+    return repositoryPath;
+  }
+  return nested;
 }
 
 export async function resolveHead(repositoryPath: string): Promise<string> {

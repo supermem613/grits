@@ -5,7 +5,7 @@ import { GritsError } from "../api/errors.js";
 import { gitDir } from "./resolve-head.js";
 
 export function isRemoteGitUrl(value: string): boolean {
-  return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/)/i.test(value);
+  return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/|file:\/\/)/i.test(value);
 }
 
 export async function copyGitDir(sourceRepo: string, destRepo: string): Promise<void> {
@@ -27,7 +27,7 @@ async function copyIfExists(from: string, to: string): Promise<void> {
   await copyFile(from, to);
 }
 
-async function copyTree(from: string, to: string): Promise<void> {
+export async function copyTree(from: string, to: string): Promise<void> {
   if (!existsSync(from)) {
     return;
   }
@@ -38,7 +38,7 @@ async function copyTree(from: string, to: string): Promise<void> {
     const dest = join(to, entry.name);
     if (entry.isDirectory()) {
       await copyTree(src, dest);
-    } else {
+    } else if (!existsSync(dest)) {
       await copyFile(src, dest);
     }
   }
