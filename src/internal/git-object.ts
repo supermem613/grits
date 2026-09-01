@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
+import { readPackedObject } from "./pack-read.js";
 import { gitDir, resolveHead } from "./resolve-head.js";
 
 export type GitObject = {
@@ -98,18 +99,29 @@ export async function readLooseObject(
     normalized.slice(0, 2),
     normalized.slice(2),
   );
-  const inflated = inflateSync(await readFile(objectPath));
-  const separator = inflated.indexOf(0);
-  const header =
-    separator === -1 ? "" : inflated.subarray(0, separator).toString("ascii");
-  const match = /^(commit|tree|blob|tag) (\d+)$/.exec(header);
-  if (separator === -1 || match === null) {
-    throw new Error(`Invalid object header for ${id}`);
+  try {
+    const inflated = inflateSync(await readFile(objectPath));
+    const separator = inflated.indexOf(0);
+    const header =
+      separator === -1 ? "" : inflated.subarray(0, separator).toString("ascii");
+    const match = /^(commit|tree|blob|tag) (\d+)$/.exec(header);
+    if (separator === -1 || match === null) {
+      throw new Error(`Invalid object header for ${id}`);
+    }
+    return {
+      type: match[1],
+      payload: Buffer.from(inflated.subarray(separator + 1)),
+    };
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
+      throw error;
+    }
+    const packed = await readPackedObject(repositoryPath, normalized);
+    if (packed !== null) {
+      return packed;
+    }
+    throw error;
   }
-  return {
-    type: match[1],
-    payload: Buffer.from(inflated.subarray(separator + 1)),
-  };
 }
 
 export function parseIdent(raw: string): Ident {

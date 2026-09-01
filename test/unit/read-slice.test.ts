@@ -147,12 +147,18 @@ describe("Grits read slice", () => {
 
       git(repositoryPath, ["repack", "-ad"]);
       git(repositoryPath, ["prune-packed"]);
-      await assert.rejects(grits.objects.read(headId), (error: unknown) => {
-        assert.equal(error instanceof GritsError, true);
-        assert.equal((error as GritsError).code, "NYI");
-        assert.equal((error as GritsError).operation, "objects.read");
-        assert.equal((error as GritsError).message, "NYI: objects.read does not read packed objects.");
-        return true;
+      const packedCommit = await grits.objects.read(headId);
+      assert.equal(packedCommit.kind, "commit");
+      assert.equal(packedCommit.id, headId);
+      if (packedCommit.kind === "commit") {
+        assert.equal(packedCommit.tree, treeId);
+        assert.equal(packedCommit.message, "initial commit\n");
+      }
+      const packedBlob = await grits.objects.read(blobId);
+      assert.deepEqual(packedBlob, {
+        kind: "blob",
+        id: blobId,
+        bytes: Array.from(Buffer.from("hello\n")),
       });
     } finally {
       rmSync(repositoryPath, { recursive: true, force: true });

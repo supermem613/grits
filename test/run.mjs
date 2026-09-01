@@ -8,8 +8,8 @@
 // for duration, slowest tests, and optional verbose sections.
 import { readdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { minimatch } from "minimatch";
 import { execFileSync } from "node:child_process";
 
@@ -180,12 +180,27 @@ function runFile(file, env) {
   };
 }
 
+function repoRoot() {
+  return dirname(dirname(fileURLToPath(import.meta.url)));
+}
+
+function ensureDist() {
+  const root = repoRoot();
+  execFileSync(process.execPath, [join(root, "node_modules", "typescript", "bin", "tsc")], {
+    cwd: root,
+    stdio: "inherit",
+  });
+}
+
 function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv);
   const allFiles = discoverFiles(opts.patterns);
   if (allFiles.length === 0) {
     console.error(`No test files found matching: ${opts.patterns.join(", ")}`);
     process.exit(1);
+  }
+  if (allFiles.some((file) => file.replaceAll("\\", "/").includes("package-boundary.test.ts"))) {
+    ensureDist();
   }
 
   const sandboxHome = process.env.GRITS_TEST_REAL_HOME

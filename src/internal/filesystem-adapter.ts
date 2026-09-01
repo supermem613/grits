@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { GritsError } from "../api/errors.js";
 import type {
@@ -27,22 +27,6 @@ function notFound(operation = "objects.read"): GritsError {
   return new GritsError("NOT_FOUND", "The requested object was not found.", operation);
 }
 
-function packedObjectNyI(operation: string): GritsError {
-  return new GritsError(
-    "NYI",
-    `NYI: ${operation} does not read packed objects.`,
-    operation,
-  );
-}
-
-function hasPackFiles(repositoryPath: string): boolean {
-  const packDir = join(gitDir(repositoryPath), "objects", "pack");
-  if (!existsSync(packDir)) {
-    return false;
-  }
-  return readdirSync(packDir).some((name) => name.endsWith(".pack"));
-}
-
 export class FilesystemAdapter implements RepositoryAdapter {
   constructor(private readonly repositoryPath: string) {}
 
@@ -59,9 +43,9 @@ export class FilesystemAdapter implements RepositoryAdapter {
     const canonical = id.toLowerCase();
     try {
       return await readLooseObject(this.repositoryPath, canonical);
-    } catch {
-      if (hasPackFiles(this.repositoryPath)) {
-        throw packedObjectNyI(operation);
+    } catch (error) {
+      if (error instanceof GritsError) {
+        throw error;
       }
       throw notFound(operation);
     }
