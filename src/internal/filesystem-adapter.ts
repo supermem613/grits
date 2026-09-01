@@ -10,6 +10,7 @@ import type {
   TreeObject,
 } from "../api/types.js";
 import { deepFreeze, type RepositoryAdapter } from "./adapter.js";
+import { readLooseBlob } from "./loose-object.js";
 
 class GitCommandFailure extends Error {
   readonly spawnFailure: boolean;
@@ -220,6 +221,21 @@ export class FilesystemAdapter implements RepositoryAdapter {
   }
 
   async read(id: ObjectId): Promise<GitObject> {
+    if (/^[0-9a-f]{40}$/i.test(id)) {
+      try {
+        const bytes = await readLooseBlob(this.repositoryPath, id.toLowerCase());
+        if (bytes !== null) {
+          return deepFreeze({
+            kind: "blob",
+            id: id.toLowerCase(),
+            bytes: Array.from(bytes),
+          });
+        }
+      } catch {
+        // Fall through to the git-backed path when the loose object cannot be read.
+      }
+    }
+
     await this.ensureRepository("objects.read");
     const canonical = await this.canonicalizeObject(id);
 
