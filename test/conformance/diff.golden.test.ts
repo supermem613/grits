@@ -70,7 +70,7 @@ describe("diff family goldens", () => {
       await withOracleRepo(async (repositoryPath, firstId, secondId) => {
         const nameStatus = git(repositoryPath, ["diff", "--name-status", firstId, secondId]);
         assert.match(nameStatus, /^M\tdiff-golden\.txt/);
-        assert.equal(await invokePalSlot(slotId), nameStatus);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), nameStatus);
       });
     });
   }

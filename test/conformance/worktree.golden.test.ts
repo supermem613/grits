@@ -55,7 +55,7 @@ describe("worktree family goldens", () => {
       await withOracleRepo(async (repositoryPath) => {
         const worktreeList = git(repositoryPath, ["worktree", "list", "--porcelain"]);
         assert.match(worktreeList, /^worktree /);
-        assert.equal(await invokePalSlot(slotId), worktreeList);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), worktreeList);
       });
     });
   }

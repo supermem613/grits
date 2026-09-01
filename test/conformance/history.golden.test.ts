@@ -81,7 +81,7 @@ describe("history family goldens", () => {
       await withOracleRepo(async (repositoryPath, firstId, secondId) => {
         assert.match(firstId, /^[0-9a-f]{40}$/);
         assert.match(secondId, /^[0-9a-f]{40}$/);
-        assert.equal(await invokePalSlot(slotId), secondId);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), secondId);
       });
     });
   }

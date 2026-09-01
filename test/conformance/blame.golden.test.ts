@@ -44,7 +44,7 @@ describe("blame family goldens", () => {
       await withOracleRepo(async (repositoryPath, commitId) => {
         const porcelain = git(repositoryPath, ["blame", "--porcelain", "blame-golden.txt"]);
         assert.match(porcelain, new RegExp(`^${commitId} `));
-        assert.equal(await invokePalSlot(slotId), porcelain);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), porcelain);
       });
     });
   }

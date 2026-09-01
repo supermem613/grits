@@ -57,7 +57,7 @@ describe("commit family goldens", () => {
         assert.match(headId, /^[0-9a-f]{40}$/);
         const objectType = gitId(repositoryPath, ["cat-file", "-t", headId]);
         assert.equal(objectType, "commit");
-        assert.equal(await invokePalSlot(slotId), headId);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), headId);
       });
     });
   }

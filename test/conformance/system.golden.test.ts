@@ -49,7 +49,7 @@ describe("system family goldens", () => {
         assert.match(version, /^git version /);
         const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
         assert.match(headId, /^[0-9a-f]{40}$/);
-        assert.equal(await invokePalSlot(slotId), headId);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), headId);
       });
     });
   }

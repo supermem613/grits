@@ -59,7 +59,7 @@ describe("index family goldens", () => {
         assert.equal(status, "");
         const treeId = gitId(repositoryPath, ["write-tree"]);
         assert.match(treeId, /^[0-9a-f]{40}$/);
-        assert.equal(await invokePalSlot(slotId), treeId);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), treeId);
       });
     });
   }

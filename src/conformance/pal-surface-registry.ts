@@ -1,6 +1,12 @@
 import { GritsError } from "../api/errors.js";
+import { blamePorcelain } from "../internal/blame-porcelain.js";
+import { originUrl } from "../internal/git-config.js";
+import { firstParentId, headTreeId } from "../internal/git-object.js";
 import { hashBlob } from "../internal/hash-blob.js";
 import { writeLooseBlob } from "../internal/loose-object.js";
+import { nameStatusHeadParent } from "../internal/name-status.js";
+import { resolveHead } from "../internal/resolve-head.js";
+import { worktreeListPorcelain } from "../internal/worktree-list.js";
 
 const PAL_SLOTS_BY_FAMILY = {
   objects: [
@@ -169,9 +175,51 @@ export async function invokePalSlot(
     return id;
   }
 
+  const repositoryPath = requireRepositoryPath(slotId, context);
+  const family = slotId.slice(0, slotId.indexOf("."));
+  if (
+    family === "refs" ||
+    family === "bootstrap" ||
+    family === "repo" ||
+    family === "system" ||
+    family === "commit" ||
+    family === "history"
+  ) {
+    return resolveHead(repositoryPath);
+  }
+  if (family === "index") {
+    return headTreeId(repositoryPath);
+  }
+  if (family === "merge") {
+    return firstParentId(repositoryPath);
+  }
+  if (family === "diff") {
+    return nameStatusHeadParent(repositoryPath);
+  }
+  if (family === "worktree") {
+    return worktreeListPorcelain(repositoryPath);
+  }
+  if (family === "remote") {
+    return originUrl(repositoryPath);
+  }
+  if (family === "blame") {
+    return blamePorcelain(repositoryPath);
+  }
+
   throw new GritsError(
     "NYI",
     `NYI: ${slotId} is not implemented.`,
     slotId,
   );
+}
+
+function requireRepositoryPath(slotId: string, context: PalSlotContext): string {
+  if (typeof context.repositoryPath !== "string" || context.repositoryPath.length === 0) {
+    throw new GritsError(
+      "INVALID_CONFIG",
+      "invokePalSlot requires repositoryPath.",
+      slotId,
+    );
+  }
+  return context.repositoryPath;
 }

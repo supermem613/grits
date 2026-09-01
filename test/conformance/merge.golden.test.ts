@@ -54,7 +54,7 @@ describe("merge family goldens", () => {
       await withOracleRepo(async (repositoryPath, firstId, secondId) => {
         const mergeBase = gitId(repositoryPath, ["merge-base", firstId, secondId]);
         assert.equal(mergeBase, firstId);
-        assert.equal(await invokePalSlot(slotId), mergeBase);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), mergeBase);
       });
     });
   }

@@ -51,7 +51,7 @@ describe("remote family goldens", () => {
       await withOracleRepo(async (repositoryPath) => {
         const originUrl = gitId(repositoryPath, ["remote", "get-url", "origin"]);
         assert.equal(originUrl, ORIGIN_URL);
-        assert.equal(await invokePalSlot(slotId), originUrl);
+        assert.equal(await invokePalSlot(slotId, { repositoryPath }), originUrl);
       });
     });
   }
