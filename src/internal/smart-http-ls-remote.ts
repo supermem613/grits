@@ -92,7 +92,16 @@ function lineText(line: Buffer): string {
   return line.toString("utf8").replace(/\n$/, "");
 }
 
-function parseAdvertisement(buffer: Buffer): LsRemoteResult {
+function encodePkt(payload: string): Buffer {
+  const body = Buffer.from(payload, "utf8");
+  if (body.length + 4 > PKT_LINE_MAX) {
+    fail("REPOSITORY_UNAVAILABLE", "Smart HTTP pkt-line exceeds the protocol maximum.");
+  }
+  const length = (body.length + 4).toString(16).padStart(4, "0");
+  return Buffer.concat([Buffer.from(length, "ascii"), body]);
+}
+
+function parseAdvertisement(buffer: Buffer): { version: 1 | 2; refs: RemoteRef[]; capabilities: string[] } {
   const lines = readPktLines(buffer);
   let index = 0;
   while (index < lines.length && lines[index] === null) {
@@ -103,9 +112,6 @@ function parseAdvertisement(buffer: Buffer): LsRemoteResult {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP advertisement is empty.");
   }
   const bannerText = lineText(banner);
-  if (bannerText.includes("version 2")) {
-    fail("NYI", "NYI: Git protocol v2 advertisements are not read.");
-  }
   if (bannerText !== `# service=${SERVICE}`) {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP advertisement is not git-upload-pack.");
   }
@@ -119,11 +125,23 @@ function parseAdvertisement(buffer: Buffer): LsRemoteResult {
   const capabilities: string[] = [];
   const first = lines[index];
   if (first === undefined || first === null) {
-    return { refs, capabilities };
+    return { version: 1, refs, capabilities };
   }
   const firstText = lineText(first);
-  if (firstText.includes("version 2")) {
-    fail("NYI", "NYI: Git protocol v2 advertisements are not read.");
+  if (firstText === "version 2") {
+    index += 1;
+    while (index < lines.length) {
+      const line = lines[index];
+      index += 1;
+      if (line === null) {
+        break;
+      }
+      const capability = lineText(line).trim();
+      if (capability.length > 0) {
+        capabilities.push(capability);
+      }
+    }
+    return { version: 2, refs, capabilities };
   }
   const nul = firstText.indexOf("\0");
   if (nul === -1) {
@@ -146,7 +164,7 @@ function parseAdvertisement(buffer: Buffer): LsRemoteResult {
     }
     refs.push(splitRef(lineText(line)));
   }
-  return { refs, capabilities };
+  return { version: 1, refs, capabilities };
 }
 
 function splitRef(line: string): RemoteRef {
@@ -160,6 +178,67 @@ function splitRef(line: string): RemoteRef {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP advertisement has a malformed ref.");
   }
   return { name, oid: oid.toLowerCase() };
+}
+
+function parseLsRefs(buffer: Buffer): LsRemoteResult {
+  const lines = readPktLines(buffer);
+  const refs: RemoteRef[] = [];
+  const capabilities: string[] = [];
+  for (const line of lines) {
+    if (line === null) {
+      break;
+    }
+    const text = lineText(line);
+    const space = text.indexOf(" ");
+    if (space === -1) {
+      fail("REPOSITORY_UNAVAILABLE", "Smart HTTP ls-refs has a malformed ref.");
+    }
+    const oid = text.slice(0, space);
+    const rest = text.slice(space + 1).trim();
+    const tokens = rest.split(" ").filter((value) => value.length > 0);
+    const name = tokens[0];
+    if (!/^[0-9a-f]{40}$/i.test(oid) || name === undefined || name.length === 0) {
+      fail("REPOSITORY_UNAVAILABLE", "Smart HTTP ls-refs has a malformed ref.");
+    }
+    refs.push({ name, oid: oid.toLowerCase() });
+    if (name === "HEAD") {
+      const symref = tokens.slice(1).find((attr) => attr.startsWith("symref-target:"));
+      if (symref !== undefined) {
+        capabilities.push(`symref=HEAD:${symref.slice("symref-target:".length)}`);
+      }
+    }
+  }
+  return { refs, capabilities };
+}
+
+async function lsRefsHttps(url: string, fetchImpl: FetchLike): Promise<LsRemoteResult> {
+  const response = await fetchImpl(`${url}/${SERVICE}`, {
+    method: "POST",
+    headers: {
+      "content-type": `application/x-${SERVICE}-request`,
+      accept: `application/x-${SERVICE}-result`,
+      "Git-Protocol": "version=2",
+    },
+    body: new Uint8Array(
+      Buffer.concat([
+        encodePkt("command=ls-refs\n"),
+        Buffer.from("0001", "ascii"),
+        encodePkt("symrefs\n"),
+        Buffer.from("0000", "ascii"),
+      ]),
+    ),
+  });
+  if (response.status === 401) {
+    fail("NYI", "NYI: lsRemoteHttps does not send credentials.");
+  }
+  if (response.status !== 200) {
+    fail("REPOSITORY_UNAVAILABLE", "Smart HTTP ls-refs did not return refs.");
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().startsWith(`application/x-${SERVICE}-result`)) {
+    fail("REPOSITORY_UNAVAILABLE", "Smart HTTP ls-refs is not a protocol result.");
+  }
+  return parseLsRefs(Buffer.from(await response.arrayBuffer()));
 }
 
 export function advertisedDefaultBranch(result: LsRemoteResult): string {
@@ -188,6 +267,8 @@ export async function lsRemoteHttps(
   fetchImpl: FetchLike = defaultFetch,
 ): Promise<LsRemoteResult> {
   const url = normalizeHttpUrl(repositoryUrl);
+  // Do not send Git-Protocol version=2 until fetchHttps speaks command=fetch.
+  // A v2 advertisement plus a v1 want body fails against current hosts.
   const response = await fetchImpl(`${url}/info/refs?service=${SERVICE}`, {
     method: "GET",
     headers: {
@@ -204,5 +285,15 @@ export async function lsRemoteHttps(
   if (!contentType.toLowerCase().startsWith(`application/x-${SERVICE}-advertisement`)) {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP ls-remote is not a smart advertisement.");
   }
-  return parseAdvertisement(Buffer.from(await response.arrayBuffer()));
+  const advertisement = parseAdvertisement(Buffer.from(await response.arrayBuffer()));
+  if (advertisement.version === 2) {
+    const hasLsRefs = advertisement.capabilities.some(
+      (capability) => capability === "ls-refs" || capability.startsWith("ls-refs="),
+    );
+    if (!hasLsRefs) {
+      fail("REPOSITORY_UNAVAILABLE", "Smart HTTP v2 advertisement does not offer ls-refs.");
+    }
+    return lsRefsHttps(url, fetchImpl);
+  }
+  return { refs: advertisement.refs, capabilities: advertisement.capabilities };
 }
