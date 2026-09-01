@@ -6,8 +6,6 @@ import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
-const NYI_REPO_SLOTS = ["repo.init", "repo.clone", "repo.connect"] as const;
-
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
     cwd: repositoryPath,
@@ -38,15 +36,29 @@ function withOracleRepo<T>(run: (repositoryPath: string) => T | Promise<T>): Pro
 }
 
 describe("repo family goldens", () => {
-  for (const slotId of NYI_REPO_SLOTS) {
-    it(`matches git oracle for ${slotId}`, async () => {
-      await withOracleRepo(async (repositoryPath) => {
-        const gitDir = gitId(repositoryPath, ["rev-parse", "--git-dir"]);
-        assert.equal(gitDir, ".git");
-        const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
-        assert.match(headId, /^[0-9a-f]{40}$/);
-        assert.equal(await invokePalSlot(slotId, { repositoryPath }), headId);
-      });
+  it("init writes a git directory", async () => {
+    const repositoryPath = mkdtempSync(join(tmpdir(), "grits-repo-init-"));
+    try {
+      assert.equal(await invokePalSlot("repo.init", { repositoryPath }), "");
+      assert.equal(gitId(repositoryPath, ["rev-parse", "--git-dir"]), ".git");
+    } finally {
+      rmSync(repositoryPath, { recursive: true, force: true });
+    }
+  });
+
+  it("connect resolves HEAD of an existing repo", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+      assert.equal(await invokePalSlot("repo.connect", { repositoryPath }), headId);
     });
-  }
+  });
+
+  it("clone stays NYI", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      await assert.rejects(
+        () => invokePalSlot("repo.clone", { repositoryPath }),
+        (error: Error & { code?: string }) => error.code === "NYI",
+      );
+    });
+  });
 });

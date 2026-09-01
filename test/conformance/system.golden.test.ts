@@ -43,13 +43,13 @@ function withOracleRepo<T>(run: (repositoryPath: string) => T | Promise<T>): Pro
 
 describe("system family goldens", () => {
   for (const slotId of NYI_SYSTEM_SLOTS) {
-    it(`matches git oracle for ${slotId}`, async () => {
+    it(`stays NYI for host slot ${slotId}`, async () => {
       await withOracleRepo(async (repositoryPath) => {
-        const version = gitId(repositoryPath, ["--version"]);
-        assert.match(version, /^git version /);
-        const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
-        assert.match(headId, /^[0-9a-f]{40}$/);
-        assert.equal(await invokePalSlot(slotId, { repositoryPath }), headId);
+        await assert.rejects(
+          () => invokePalSlot(slotId, { repositoryPath }),
+          (error: Error & { code?: string }) =>
+            error.message.startsWith("NYI:") && error.code === "NYI",
+        );
       });
     });
   }

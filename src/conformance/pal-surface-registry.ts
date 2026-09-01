@@ -1,12 +1,5 @@
 import { GritsError } from "../api/errors.js";
-import { blamePorcelain } from "../internal/blame-porcelain.js";
-import { originUrl } from "../internal/git-config.js";
-import { firstParentId, headTreeId } from "../internal/git-object.js";
-import { hashBlob } from "../internal/hash-blob.js";
-import { writeLooseBlob } from "../internal/loose-object.js";
-import { nameStatusHeadParent } from "../internal/name-status.js";
-import { resolveHead } from "../internal/resolve-head.js";
-import { worktreeListPorcelain } from "../internal/worktree-list.js";
+import { runPalSlot, type PalSlotContext } from "../internal/native-pal.js";
 
 const PAL_SLOTS_BY_FAMILY = {
   objects: [
@@ -126,10 +119,7 @@ export const nyiPalSlotIds: readonly string[] = Object.freeze(
   palSlotIds.filter((slotId) => palSlotToCanonicalOperation[slotId] === undefined),
 );
 
-export type PalSlotContext = {
-  repositoryPath?: string;
-  stdin?: string;
-};
+export type { PalSlotContext };
 
 export async function invokePalSlot(
   slotId: string,
@@ -143,83 +133,5 @@ export async function invokePalSlot(
     );
   }
 
-  const hashObjectSlots = new Set([
-    "objects.hashObjectStdin",
-    "objects.hashObjectForPath",
-    "objects.hashObjectNoWrite",
-    "objects.hashObjectForPathNoWrite",
-    "objects.hashObjectWriteBatch",
-    "objects.hashObjectWriteBatchAsync",
-  ]);
-  if (hashObjectSlots.has(slotId)) {
-    if (typeof context.stdin !== "string") {
-      throw new GritsError(
-        "INVALID_CONFIG",
-        "invokePalSlot requires stdin for object hash slots.",
-        slotId,
-      );
-    }
-
-    const content = Buffer.from(context.stdin);
-    const id = hashBlob(content);
-    if (
-      (slotId === "objects.hashObjectStdin" ||
-        slotId === "objects.hashObjectForPath" ||
-        slotId === "objects.hashObjectWriteBatch" ||
-        slotId === "objects.hashObjectWriteBatchAsync") &&
-      typeof context.repositoryPath === "string" &&
-      context.repositoryPath.length > 0
-    ) {
-      await writeLooseBlob(context.repositoryPath, content);
-    }
-    return id;
-  }
-
-  const repositoryPath = requireRepositoryPath(slotId, context);
-  const family = slotId.slice(0, slotId.indexOf("."));
-  if (
-    family === "refs" ||
-    family === "bootstrap" ||
-    family === "repo" ||
-    family === "system" ||
-    family === "commit" ||
-    family === "history"
-  ) {
-    return resolveHead(repositoryPath);
-  }
-  if (family === "index") {
-    return headTreeId(repositoryPath);
-  }
-  if (family === "merge") {
-    return firstParentId(repositoryPath);
-  }
-  if (family === "diff") {
-    return nameStatusHeadParent(repositoryPath);
-  }
-  if (family === "worktree") {
-    return worktreeListPorcelain(repositoryPath);
-  }
-  if (family === "remote") {
-    return originUrl(repositoryPath);
-  }
-  if (family === "blame") {
-    return blamePorcelain(repositoryPath);
-  }
-
-  throw new GritsError(
-    "NYI",
-    `NYI: ${slotId} is not implemented.`,
-    slotId,
-  );
-}
-
-function requireRepositoryPath(slotId: string, context: PalSlotContext): string {
-  if (typeof context.repositoryPath !== "string" || context.repositoryPath.length === 0) {
-    throw new GritsError(
-      "INVALID_CONFIG",
-      "invokePalSlot requires repositoryPath.",
-      slotId,
-    );
-  }
-  return context.repositoryPath;
+  return runPalSlot(slotId, context);
 }

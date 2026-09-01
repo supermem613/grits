@@ -1,6 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { inflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import { gitDir, resolveHead } from "./resolve-head.js";
 
 export type GitObject = {
@@ -28,6 +29,63 @@ export type TreeEntry = {
   name: string;
   id: string;
 };
+
+export function hashObject(type: string, payload: Uint8Array): string {
+  const header = Buffer.from(`${type} ${payload.byteLength}\0`, "utf8");
+  return createHash("sha1").update(header).update(payload).digest("hex");
+}
+
+export async function writeLooseObject(
+  repositoryPath: string,
+  type: string,
+  payload: Uint8Array,
+): Promise<string> {
+  const id = hashObject(type, payload);
+  const shard = id.slice(0, 2);
+  const objectPath = join(gitDir(repositoryPath), "objects", shard, id.slice(2));
+  const object = Buffer.concat([
+    Buffer.from(`${type} ${payload.byteLength}\0`, "utf8"),
+    Buffer.from(payload),
+  ]);
+  await mkdir(join(gitDir(repositoryPath), "objects", shard), { recursive: true });
+  try {
+    await writeFile(objectPath, deflateSync(object), { flag: "wx" });
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
+      throw error;
+    }
+  }
+  return id;
+}
+
+export function serializeTree(entries: readonly TreeEntry[]): Buffer {
+  const sorted = [...entries].sort((left, right) => {
+    if (left.name < right.name) {
+      return -1;
+    }
+    if (left.name > right.name) {
+      return 1;
+    }
+    return 0;
+  });
+  const parts: Buffer[] = [];
+  for (const entry of sorted) {
+    parts.push(
+      Buffer.concat([
+        Buffer.from(`${entry.mode} ${entry.name}\0`, "utf8"),
+        Buffer.from(entry.id, "hex"),
+      ]),
+    );
+  }
+  return Buffer.concat(parts);
+}
+
+export async function writeTreeFromEntries(
+  repositoryPath: string,
+  entries: readonly TreeEntry[],
+): Promise<string> {
+  return writeLooseObject(repositoryPath, "tree", serializeTree(entries));
+}
 
 export async function readLooseObject(
   repositoryPath: string,

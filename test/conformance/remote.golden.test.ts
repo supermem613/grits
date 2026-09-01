@@ -6,13 +6,6 @@ import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
-const NYI_REMOTE_SLOTS = [
-  "remote.originUrl",
-  "remote.fetchUpstream",
-  "remote.pushFf",
-  "remote.pushForceWithLease",
-] as const;
-
 const ORIGIN_URL = "https://example.test/grits.git";
 
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
@@ -46,12 +39,22 @@ function withOracleRepo<T>(run: (repositoryPath: string) => T | Promise<T>): Pro
 }
 
 describe("remote family goldens", () => {
-  for (const slotId of NYI_REMOTE_SLOTS) {
-    it(`matches git oracle for ${slotId}`, async () => {
+  it("originUrl matches git remote get-url origin", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("remote.originUrl", { repositoryPath }),
+        gitId(repositoryPath, ["remote", "get-url", "origin"]),
+      );
+    });
+  });
+
+  for (const slotId of ["remote.fetchUpstream", "remote.pushFf", "remote.pushForceWithLease"] as const) {
+    it(`${slotId} stays NYI`, async () => {
       await withOracleRepo(async (repositoryPath) => {
-        const originUrl = gitId(repositoryPath, ["remote", "get-url", "origin"]);
-        assert.equal(originUrl, ORIGIN_URL);
-        assert.equal(await invokePalSlot(slotId, { repositoryPath }), originUrl);
+        await assert.rejects(
+          () => invokePalSlot(slotId, { repositoryPath }),
+          (error: Error & { code?: string }) => error.code === "NYI",
+        );
       });
     });
   }

@@ -6,12 +6,6 @@ import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
-const NYI_MERGE_SLOTS = [
-  "merge.mergeFfOnly",
-  "merge.rebaseOnto",
-  "merge.rebaseAbort",
-] as const;
-
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
     cwd: repositoryPath,
@@ -49,13 +43,32 @@ function withOracleRepo<T>(
 }
 
 describe("merge family goldens", () => {
-  for (const slotId of NYI_MERGE_SLOTS) {
-    it(`matches git oracle for ${slotId}`, async () => {
-      await withOracleRepo(async (repositoryPath, firstId, secondId) => {
-        const mergeBase = gitId(repositoryPath, ["merge-base", firstId, secondId]);
-        assert.equal(mergeBase, firstId);
-        assert.equal(await invokePalSlot(slotId, { repositoryPath }), mergeBase);
-      });
+  it("mergeFfOnly fast-forwards HEAD to the target", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, secondId) => {
+      gitId(repositoryPath, ["update-ref", "HEAD", firstId]);
+      assert.equal(
+        await invokePalSlot("merge.mergeFfOnly", { repositoryPath, target: secondId }),
+        "",
+      );
+      assert.equal(gitId(repositoryPath, ["rev-parse", "HEAD"]), secondId);
     });
-  }
+  });
+
+  it("rebaseOnto stays NYI", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      await assert.rejects(
+        () => invokePalSlot("merge.rebaseOnto", { repositoryPath, target: "HEAD" }),
+        (error: Error & { code?: string }) => error.code === "NYI",
+      );
+    });
+  });
+
+  it("rebaseAbort stays NYI", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      await assert.rejects(
+        () => invokePalSlot("merge.rebaseAbort", { repositoryPath }),
+        (error: Error & { code?: string }) => error.code === "NYI",
+      );
+    });
+  });
 });

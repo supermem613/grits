@@ -6,15 +6,6 @@ import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
-const NYI_DIFF_SLOTS = [
-  "diff.nameStatusZ",
-  "diff.nameStatusZBetween",
-  "diff.noIndex",
-  "diff.unmergedNames",
-  "diff.cachedQuiet",
-  "diff.configShowOrigin",
-] as const;
-
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
     cwd: repositoryPath,
@@ -65,13 +56,63 @@ describe("diff family goldens", () => {
     });
   });
 
-  for (const slotId of NYI_DIFF_SLOTS) {
-    it(`matches git oracle for ${slotId}`, async () => {
-      await withOracleRepo(async (repositoryPath, firstId, secondId) => {
-        const nameStatus = git(repositoryPath, ["diff", "--name-status", firstId, secondId]);
-        assert.match(nameStatus, /^M\tdiff-golden\.txt/);
-        assert.equal(await invokePalSlot(slotId, { repositoryPath }), nameStatus);
-      });
+  it("nameStatusZBetween matches git diff --name-status -z", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, secondId) => {
+      assert.equal(
+        await invokePalSlot("diff.nameStatusZBetween", {
+          repositoryPath,
+          rev: firstId,
+          otherRev: secondId,
+        }),
+        git(repositoryPath, ["diff", "--name-status", "-z", firstId, secondId]),
+      );
     });
-  }
+  });
+
+  it("nameStatusZ matches HEAD^ HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("diff.nameStatusZ", { repositoryPath }),
+        git(repositoryPath, ["diff", "--name-status", "-z", "HEAD^", "HEAD"]),
+      );
+    });
+  });
+
+  it("unmergedNames is empty without conflicts", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(await invokePalSlot("diff.unmergedNames", { repositoryPath }), "");
+    });
+  });
+
+  it("noIndex reports a mismatch between two worktree files", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      writeFileSync(join(repositoryPath, "left.txt"), "left\n", "utf8");
+      writeFileSync(join(repositoryPath, "right.txt"), "right\n", "utf8");
+      assert.equal(
+        await invokePalSlot("diff.noIndex", {
+          repositoryPath,
+          path: "left.txt",
+          dest: "right.txt",
+        }),
+        "M\tleft.txt\n",
+      );
+    });
+  });
+
+  it("configShowOrigin reports the local config file", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const shown = await invokePalSlot("diff.configShowOrigin", {
+        repositoryPath,
+        path: "user.email",
+      });
+      assert.match(shown, /file:/);
+      assert.match(shown, /grits@example\.test/);
+    });
+  });
+
+  it("cachedQuiet is empty when the index matches HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(await invokePalSlot("diff.cachedQuiet", { repositoryPath }), "");
+    });
+  });
 });

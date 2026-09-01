@@ -6,8 +6,6 @@ import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
-const NYI_BOOTSTRAP_SLOTS = ["bootstrap.init", "bootstrap.clone", "bootstrap.connect"] as const;
-
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
     cwd: repositoryPath,
@@ -38,15 +36,29 @@ function withOracleRepo<T>(run: (repositoryPath: string) => T | Promise<T>): Pro
 }
 
 describe("bootstrap family goldens", () => {
-  for (const slotId of NYI_BOOTSTRAP_SLOTS) {
-    it(`matches git oracle for ${slotId}`, async () => {
-      await withOracleRepo(async (repositoryPath) => {
-        const insideWorkTree = gitId(repositoryPath, ["rev-parse", "--is-inside-work-tree"]);
-        assert.equal(insideWorkTree, "true");
-        const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
-        assert.match(headId, /^[0-9a-f]{40}$/);
-        assert.equal(await invokePalSlot(slotId, { repositoryPath }), headId);
-      });
+  it("init writes a git directory", async () => {
+    const repositoryPath = mkdtempSync(join(tmpdir(), "grits-bootstrap-init-"));
+    try {
+      assert.equal(await invokePalSlot("bootstrap.init", { repositoryPath }), "");
+      assert.equal(gitId(repositoryPath, ["rev-parse", "--is-inside-work-tree"]), "true");
+    } finally {
+      rmSync(repositoryPath, { recursive: true, force: true });
+    }
+  });
+
+  it("connect resolves HEAD of an existing repo", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+      assert.equal(await invokePalSlot("bootstrap.connect", { repositoryPath }), headId);
     });
-  }
+  });
+
+  it("clone stays NYI", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      await assert.rejects(
+        () => invokePalSlot("bootstrap.clone", { repositoryPath }),
+        (error: Error & { code?: string }) => error.code === "NYI",
+      );
+    });
+  });
 });

@@ -7,20 +7,6 @@ import { strict as assert } from "node:assert";
 import { createGrits } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
-const NYI_HISTORY_SLOTS = [
-  "history.revParse",
-  "history.resolveCommit",
-  "history.revListCount",
-  "history.countCommits",
-  "history.firstCommit",
-  "history.lookupBlobAt",
-  "history.lookupBlobsAtBatch",
-  "history.splitPathRev",
-  "history.mergeBase",
-  "history.revListObjects",
-  "history.objectSizes",
-] as const;
-
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
     cwd: repositoryPath,
@@ -76,15 +62,120 @@ function withOracleRepo<T>(
 }
 
 describe("history family goldens", () => {
-  for (const slotId of NYI_HISTORY_SLOTS) {
-    it(`matches git oracle for ${slotId}`, async () => {
-      await withOracleRepo(async (repositoryPath, firstId, secondId) => {
-        assert.match(firstId, /^[0-9a-f]{40}$/);
-        assert.match(secondId, /^[0-9a-f]{40}$/);
-        assert.equal(await invokePalSlot(slotId, { repositoryPath }), secondId);
-      });
+  it("revParse matches git rev-parse HEAD", async () => {
+    await withOracleRepo(async (repositoryPath, _firstId, secondId) => {
+      assert.equal(
+        await invokePalSlot("history.revParse", { repositoryPath, rev: "HEAD" }),
+        secondId,
+      );
     });
-  }
+  });
+
+  it("revListCount matches git rev-list --count HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("history.revListCount", { repositoryPath, rev: "HEAD" }),
+        gitId(repositoryPath, ["rev-list", "--count", "HEAD"]),
+      );
+    });
+  });
+
+  it("firstCommit is the root, not HEAD", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, secondId) => {
+      assert.equal(
+        await invokePalSlot("history.firstCommit", { repositoryPath, rev: "HEAD" }),
+        firstId,
+      );
+      assert.notEqual(firstId, secondId);
+    });
+  });
+
+  it("lookupBlobAt matches git rev-parse HEAD:path", async () => {
+    await withOracleRepo(async (repositoryPath, _firstId, secondId) => {
+      const blob = await invokePalSlot("history.lookupBlobAt", {
+        repositoryPath,
+        rev: "HEAD",
+        path: "history-golden.txt",
+      });
+      assert.equal(blob, gitId(repositoryPath, ["rev-parse", "HEAD:history-golden.txt"]));
+      assert.notEqual(blob, secondId);
+    });
+  });
+
+  it("mergeBase matches git merge-base", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, secondId) => {
+      assert.equal(
+        await invokePalSlot("history.mergeBase", {
+          repositoryPath,
+          rev: firstId,
+          otherRev: secondId,
+        }),
+        gitId(repositoryPath, ["merge-base", firstId, secondId]),
+      );
+    });
+  });
+
+  it("splitPathRev splits path@rev", async () => {
+    await withOracleRepo(async () => {
+      assert.equal(
+        await invokePalSlot("history.splitPathRev", { stdin: "history-golden.txt@HEAD" }),
+        "history-golden.txt\tHEAD",
+      );
+    });
+  });
+
+  it("objectSizes returns the commit payload size", async () => {
+    await withOracleRepo(async (repositoryPath, _firstId, secondId) => {
+      const size = await invokePalSlot("history.objectSizes", { repositoryPath, rev: secondId });
+      assert.match(size, /^\d+$/);
+      assert.notEqual(size, secondId);
+    });
+  });
+
+  it("countCommits matches rev-list --count", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("history.countCommits", { repositoryPath, rev: "HEAD" }),
+        gitId(repositoryPath, ["rev-list", "--count", "HEAD"]),
+      );
+    });
+  });
+
+  it("resolveCommit matches rev-parse HEAD", async () => {
+    await withOracleRepo(async (repositoryPath, _firstId, secondId) => {
+      assert.equal(
+        await invokePalSlot("history.resolveCommit", { repositoryPath, rev: "HEAD" }),
+        secondId,
+      );
+    });
+  });
+
+  it("lookupBlobsAtBatch matches lookupBlobAt", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const one = await invokePalSlot("history.lookupBlobAt", {
+        repositoryPath,
+        rev: "HEAD",
+        path: "history-golden.txt",
+      });
+      const batch = await invokePalSlot("history.lookupBlobsAtBatch", {
+        repositoryPath,
+        rev: "HEAD",
+        path: "history-golden.txt",
+      });
+      assert.equal(batch, one);
+    });
+  });
+
+  it("revListObjects includes the HEAD commit id", async () => {
+    await withOracleRepo(async (repositoryPath, _firstId, secondId) => {
+      const listed = await invokePalSlot("history.revListObjects", {
+        repositoryPath,
+        rev: "HEAD",
+      });
+      assert.match(listed, new RegExp(`^${secondId}`, "m"));
+    });
+  });
+
 
   it("spawns git then matches history.isAncestor for history.isAncestor", async () => {
     await withOracleRepo(async (repositoryPath, firstId, secondId) => {
