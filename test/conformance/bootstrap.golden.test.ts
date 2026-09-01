@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -74,7 +74,48 @@ describe("bootstrap family goldens", () => {
           gitId(dest, ["cat-file", "-p", "HEAD:bootstrap-golden.txt"]),
           "golden-bootstrap",
         );
+        assert.equal(
+          gitId(dest, ["remote", "get-url", "origin"]).replaceAll("\\", "/"),
+          repositoryPath.replaceAll("\\", "/"),
+        );
+        const branch = gitId(dest, ["rev-parse", "--abbrev-ref", "HEAD"]);
+        assert.equal(
+          gitId(dest, ["rev-parse", `refs/remotes/origin/${branch}`]),
+          gitId(dest, ["rev-parse", "HEAD"]),
+        );
       } finally {
+        rmSync(dest, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("clone copies a local bare repository", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const bare = mkdtempSync(join(tmpdir(), "grits-bootstrap-bare-"));
+      const dest = mkdtempSync(join(tmpdir(), "grits-bootstrap-from-bare-"));
+      rmSync(dest, { recursive: true, force: true });
+      try {
+        cpSync(join(repositoryPath, ".git", "objects"), join(bare, "objects"), { recursive: true });
+        cpSync(join(repositoryPath, ".git", "refs"), join(bare, "refs"), { recursive: true });
+        cpSync(join(repositoryPath, ".git", "HEAD"), join(bare, "HEAD"));
+        assert.equal(
+          await invokePalSlot("bootstrap.clone", {
+            repositoryPath,
+            path: bare,
+            dest,
+          }),
+          "",
+        );
+        assert.equal(
+          gitId(dest, ["rev-parse", "HEAD"]),
+          gitId(repositoryPath, ["rev-parse", "HEAD"]),
+        );
+        assert.equal(
+          gitId(dest, ["cat-file", "-p", "HEAD:bootstrap-golden.txt"]),
+          "golden-bootstrap",
+        );
+      } finally {
+        rmSync(bare, { recursive: true, force: true });
         rmSync(dest, { recursive: true, force: true });
       }
     });

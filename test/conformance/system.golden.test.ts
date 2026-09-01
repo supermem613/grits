@@ -48,7 +48,8 @@ describe("system family goldens", () => {
         await assert.rejects(
           () => invokePalSlot(slotId, { repositoryPath }),
           (error: Error & { code?: string }) =>
-            error.message.startsWith("NYI:") && error.code === "NYI",
+            error.code === "NYI" &&
+            error.message === `NYI: ${slotId} is a host operation, not a git repository operation.`,
         );
       });
     });

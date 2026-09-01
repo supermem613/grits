@@ -144,6 +144,16 @@ describe("Grits read slice", () => {
         return true;
       });
       assert.equal(await grits.refs.resolve("refs/does-not-exist"), null);
+
+      git(repositoryPath, ["repack", "-ad"]);
+      git(repositoryPath, ["prune-packed"]);
+      await assert.rejects(grits.objects.read(headId), (error: unknown) => {
+        assert.equal(error instanceof GritsError, true);
+        assert.equal((error as GritsError).code, "NYI");
+        assert.equal((error as GritsError).operation, "objects.read");
+        assert.equal((error as GritsError).message, "NYI: objects.read does not read packed objects.");
+        return true;
+      });
     } finally {
       rmSync(repositoryPath, { recursive: true, force: true });
     }

@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GritsError } from "../api/errors.js";
-import { gitDir } from "./resolve-head.js";
+import { gitDir, resolveRef } from "./resolve-head.js";
 
 export function isRemoteGitUrl(value: string): boolean {
   return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/|file:\/\/)/i.test(value);
@@ -16,8 +16,30 @@ export async function copyGitDir(sourceRepo: string, destRepo: string): Promise<
   await copyTree(join(sourceGit, "refs"), join(destGit, "refs"));
   await copyIfExists(join(sourceGit, "packed-refs"), join(destGit, "packed-refs"));
   await copyIfExists(join(sourceGit, "HEAD"), join(destGit, "HEAD"));
-  const config = `[core]\n\trepositoryformatversion = 0\n\tfilemode = false\n\tbare = false\n`;
-  await writeFile(join(destGit, "config"), config, "utf8");
+  await writeOriginRemote(sourceRepo, destRepo);
+}
+
+export async function writeOriginRemote(sourceRepo: string, destRepo: string): Promise<void> {
+  const destGit = gitDir(destRepo);
+  const origin = sourceRepo.replaceAll("\\", "/");
+  let branch = "master";
+  try {
+    const head = (await readFile(join(destGit, "HEAD"), "utf8")).trim();
+    const match = /^ref:\s*refs\/heads\/(.+)$/i.exec(head);
+    if (match !== null) {
+      branch = match[1];
+      const oid = await resolveRef(destRepo, `refs/heads/${branch}`);
+      await mkdir(join(destGit, "refs", "remotes", "origin"), { recursive: true });
+      await writeFile(join(destGit, "refs", "remotes", "origin", branch), `${oid}\n`, "utf8");
+    }
+  } catch {
+    // Detached HEAD still gets origin url and fetch spec.
+  }
+  await writeFile(
+    join(destGit, "config"),
+    `[core]\n\trepositoryformatversion = 0\n\tfilemode = false\n\tbare = false\n[remote "origin"]\n\turl = ${origin}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch "${branch}"]\n\tremote = origin\n\tmerge = refs/heads/${branch}\n`,
+    "utf8",
+  );
 }
 
 async function copyIfExists(from: string, to: string): Promise<void> {
@@ -44,11 +66,15 @@ export async function copyTree(from: string, to: string): Promise<void> {
   }
 }
 
+export function isGitRepository(path: string): boolean {
+  return existsSync(join(path, ".git")) || (existsSync(join(path, "HEAD")) && existsSync(join(path, "objects")));
+}
+
 export function requireLocalCloneSource(slotId: string, source: string): void {
   if (isRemoteGitUrl(source)) {
     throw new GritsError("NYI", `NYI: ${slotId} does not clone remote URLs.`, slotId);
   }
-  if (!existsSync(source) || !existsSync(join(source, ".git"))) {
+  if (!existsSync(source) || !isGitRepository(source)) {
     throw new GritsError("NOT_FOUND", `Clone source ${source} is not a git repository.`, slotId);
   }
 }

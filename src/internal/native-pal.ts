@@ -280,7 +280,11 @@ export async function runPalSlot(slotId: string, context: PalSlotContext): Promi
     case "system.selfUpdate":
     case "system.selfBuild":
     case "system.launchBrowserWindow":
-      throw new GritsError("NYI", `NYI: ${slotId} is not implemented.`, slotId);
+      throw new GritsError(
+        "NYI",
+        `NYI: ${slotId} is a host operation, not a git repository operation.`,
+        slotId,
+      );
     default:
       throw new GritsError("NYI", `NYI: ${slotId} is not implemented.`, slotId);
   }
