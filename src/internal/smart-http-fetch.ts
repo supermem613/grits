@@ -8,6 +8,7 @@ import { writePackIndex } from "./pack-read.js";
 import { updateRefNoDeref } from "./refs.js";
 import { gitDir, resolveRef } from "./resolve-head.js";
 import {
+  advertisedDefaultBranch,
   defaultFetch,
   lsRemoteHttps,
   type FetchLike,
@@ -186,16 +187,18 @@ export async function cloneHttps(
   fetchImpl: FetchLike = defaultFetch,
 ): Promise<void> {
   await mkdir(destPath, { recursive: true });
+  const advertised = await lsRemoteHttps(repositoryUrl, fetchImpl);
+  const branch = advertisedDefaultBranch(advertised);
   const dir = gitDir(destPath);
   await mkdir(join(dir, "objects"), { recursive: true });
   await mkdir(join(dir, "refs", "heads"), { recursive: true });
-  await writeFile(join(dir, "HEAD"), "ref: refs/heads/main\n", "utf8");
+  await writeFile(join(dir, "HEAD"), `ref: refs/heads/${branch}\n`, "utf8");
   await writeFile(
     join(dir, "config"),
-    `[core]\n\trepositoryformatversion = 0\n\tfilemode = false\n\tbare = false\n[remote "origin"]\n\turl = ${repositoryUrl.replace(/\/+$/, "")}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n`,
+    `[core]\n\trepositoryformatversion = 0\n\tfilemode = false\n\tbare = false\n[remote "origin"]\n\turl = ${repositoryUrl.replace(/\/+$/, "")}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch "${branch}"]\n\tremote = origin\n\tmerge = refs/heads/${branch}\n`,
     "utf8",
   );
   await fetchHttps(destPath, repositoryUrl, fetchImpl);
-  const tip = await resolveRef(destPath, "refs/remotes/origin/main");
-  await updateRefNoDeref(destPath, "refs/heads/main", tip);
+  const tip = await resolveRef(destPath, `refs/remotes/origin/${branch}`);
+  await updateRefNoDeref(destPath, `refs/heads/${branch}`, tip);
 }

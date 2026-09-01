@@ -34,12 +34,12 @@ function pkt(payload: Buffer | string): Buffer {
   return Buffer.concat([Buffer.from(length, "ascii"), body]);
 }
 
-function advertisement(commitId: string): Buffer {
+function advertisement(commitId: string, branch = "main"): Buffer {
   return Buffer.concat([
     pkt("# service=git-upload-pack\n"),
     Buffer.from("0000", "ascii"),
-    pkt(`${commitId} HEAD\0multi_ack thin-pack ofs-delta side-band-64k symref=HEAD:refs/heads/main\n`),
-    pkt(`${commitId} refs/heads/main\n`),
+    pkt(`${commitId} HEAD\0multi_ack thin-pack ofs-delta side-band-64k symref=HEAD:refs/heads/${branch}\n`),
+    pkt(`${commitId} refs/heads/${branch}\n`),
     Buffer.from("0000", "ascii"),
   ]);
 }
@@ -232,6 +232,62 @@ describe("PAL HTTPS remotes", () => {
         });
         const grits = createGrits({
           repository: { kind: "filesystem", path: destPath },
+        });
+        const blob = await grits.objects.read(blobId);
+        assert.deepEqual(blob, {
+          kind: "blob",
+          id: blobId,
+          bytes: Array.from(Buffer.from(BLOB_TEXT)),
+        });
+      } finally {
+        rmSync(destPath, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("cloneHttps checks out the advertised default branch", async () => {
+    await withRepo(async (sourcePath) => {
+      writeFileSync(join(sourcePath, "file.txt"), BLOB_TEXT, "utf8");
+      git(sourcePath, ["add", "file.txt"]);
+      git(sourcePath, ["commit", "-m", "packed-hello"]);
+      const blobId = git(sourcePath, ["rev-parse", "HEAD:file.txt"]);
+      const commitId = git(sourcePath, ["rev-parse", "HEAD"]);
+      git(sourcePath, ["repack", "-ad"]);
+      git(sourcePath, ["prune-packed"]);
+      const packDir = join(sourcePath, ".git", "objects", "pack");
+      const packName = readdirSync(packDir).find((name) => name.endsWith(".pack"));
+      assert.notEqual(packName, undefined);
+      if (packName === undefined) {
+        return;
+      }
+      const pack = readFileSync(join(packDir, packName));
+      const destPath = mkdtempSync(join(tmpdir(), "grits-pal-https-clone-master-"));
+      try {
+        await cloneHttps(destPath, "https://example.test/grits.git", async (_url, init) => {
+          const method = init?.method ?? "GET";
+          if (method === "GET") {
+            return new Response(advertisement(commitId, "master"), {
+              status: 200,
+              headers: {
+                "content-type": "application/x-git-upload-pack-advertisement",
+              },
+            });
+          }
+          return new Response(uploadPackResult(pack), {
+            status: 200,
+            headers: {
+              "content-type": "application/x-git-upload-pack-result",
+            },
+          });
+        });
+        // Advertised name is the specification. Clone must not hard-code main.
+        assert.equal(readFileSync(join(destPath, ".git", "HEAD"), "utf8"), "ref: refs/heads/master\n");
+        const grits = createGrits({
+          repository: { kind: "filesystem", path: destPath },
+        });
+        assert.deepEqual(await grits.refs.resolve("refs/heads/master"), {
+          name: "refs/heads/master",
+          objectId: commitId,
         });
         const blob = await grits.objects.read(blobId);
         assert.deepEqual(blob, {

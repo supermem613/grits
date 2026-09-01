@@ -162,6 +162,27 @@ function splitRef(line: string): RemoteRef {
   return { name, oid: oid.toLowerCase() };
 }
 
+export function advertisedDefaultBranch(result: LsRemoteResult): string {
+  const symref = result.capabilities.find((capability) => capability.startsWith("symref=HEAD:"));
+  if (symref !== undefined) {
+    const target = symref.slice("symref=HEAD:".length);
+    if (target.startsWith("refs/heads/") && target.length > "refs/heads/".length) {
+      return target.slice("refs/heads/".length);
+    }
+    fail("REPOSITORY_UNAVAILABLE", "Smart HTTP HEAD symref is not a branch.");
+  }
+  const head = result.refs.find((ref) => ref.name === "HEAD");
+  if (head !== undefined) {
+    const match = result.refs.find(
+      (ref) => ref.name.startsWith("refs/heads/") && ref.oid === head.oid,
+    );
+    if (match !== undefined) {
+      return match.name.slice("refs/heads/".length);
+    }
+  }
+  fail("REPOSITORY_UNAVAILABLE", "Smart HTTP advertisement does not name a default branch.");
+}
+
 export async function lsRemoteHttps(
   repositoryUrl: string,
   fetchImpl: FetchLike = defaultFetch,
