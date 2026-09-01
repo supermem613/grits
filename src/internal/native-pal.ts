@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { GritsError } from "../api/errors.js";
 import { isNonEmptyString, isRuntimeString } from "./runtime-type.js";
 import { blamePorcelain } from "./blame-porcelain.js";
-import { copyGitDir, requireLocalCloneSource } from "./clone-local.js";
+import { cloneHttps, copyGitDir, requireLocalCloneSource } from "./clone-local.js";
 import { configGet, originUrl } from "./git-config.js";
 import {
   flattenTree,
@@ -905,6 +905,10 @@ async function cloneRepository(slotId: string, context: PalSlotContext): Promise
   const dest = context.dest;
   if (!isNonEmptyString(source) || !isNonEmptyString(dest)) {
     throw new GritsError("INVALID_CONFIG", "clone requires path and dest.", slotId);
+  }
+  if (/^https?:\/\//i.test(source)) {
+    await cloneHttps(dest, source);
+    return checkout(dest, "HEAD", false);
   }
   requireLocalCloneSource(slotId, source);
   await mkdir(dest, { recursive: true });

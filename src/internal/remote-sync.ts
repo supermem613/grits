@@ -7,17 +7,35 @@ import { remoteUrl } from "./git-config.js";
 import { readCommit } from "./git-object.js";
 import { gitDir, resolveHead } from "./resolve-head.js";
 import { resolveRevision, updateRef } from "./refs.js";
+import { defaultFetch, type FetchLike } from "./smart-http-ls-remote.js";
+import { fetchHttps } from "./smart-http-fetch.js";
+import { pushHttps } from "./smart-http-push.js";
+
+function isHttpsGitUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
 
 export async function fetchUpstream(
   repositoryPath: string,
   remoteName: string,
   branch: string,
+  fetchImpl: FetchLike = defaultFetch,
 ): Promise<string> {
+  const url = await remoteUrl(repositoryPath, remoteName);
+  if (isHttpsGitUrl(url)) {
+    await fetchHttps(repositoryPath, url, fetchImpl);
+    const tip = await resolveRevision(repositoryPath, `refs/remotes/${remoteName}/${branch}`);
+    await writeFile(
+      join(gitDir(repositoryPath), "FETCH_HEAD"),
+      `${tip}\t\tbranch '${branch}' of ${url}\n`,
+      "utf8",
+    );
+    return tip;
+  }
   const originPath = await requireLocalRemote(repositoryPath, remoteName, "remote.fetchUpstream");
   const tip = await resolveRevision(originPath, `refs/heads/${branch}`);
   await copyTree(join(gitDir(originPath), "objects"), join(gitDir(repositoryPath), "objects"));
   await updateRef(repositoryPath, `refs/remotes/${remoteName}/${branch}`, tip);
-  const url = await remoteUrl(repositoryPath, remoteName);
   await writeFile(
     join(gitDir(repositoryPath), "FETCH_HEAD"),
     `${tip}\t\tbranch '${branch}' of ${url}\n`,
@@ -31,7 +49,13 @@ export async function pushFf(
   remoteName: string,
   branch: string,
   sha: string,
+  fetchImpl: FetchLike = defaultFetch,
 ): Promise<string> {
+  const url = await remoteUrl(repositoryPath, remoteName);
+  if (isHttpsGitUrl(url)) {
+    await pushHttps(repositoryPath, url, fetchImpl);
+    return "";
+  }
   const originPath = await requireLocalRemote(repositoryPath, remoteName, "remote.pushFf");
   await refuseCheckedOutBranch(originPath, branch, "remote.pushFf");
   const oid = sha.length === 0 ? await resolveHead(repositoryPath) : sha;

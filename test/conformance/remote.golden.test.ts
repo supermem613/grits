@@ -7,6 +7,7 @@ import { strict as assert } from "node:assert";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
 const ORIGIN_URL = "https://example.test/grits.git";
+const SSH_ORIGIN_URL = "ssh://example.test/grits.git";
 
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", ["-c", "safe.bareRepository=all", ...args], {
@@ -49,8 +50,9 @@ describe("remote family goldens", () => {
   });
 
   for (const slotId of ["remote.fetchUpstream", "remote.pushFf", "remote.pushForceWithLease"] as const) {
-    it(`${slotId} stays NYI for a network origin`, async () => {
+    it(`${slotId} stays NYI for an SSH origin`, async () => {
       await withOracleRepo(async (repositoryPath) => {
+        gitId(repositoryPath, ["remote", "set-url", "origin", SSH_ORIGIN_URL]);
         await assert.rejects(
           () => invokePalSlot(slotId, { repositoryPath }),
           (error: Error & { code?: string }) =>
