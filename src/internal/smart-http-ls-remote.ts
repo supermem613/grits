@@ -8,6 +8,7 @@ export type RemoteRef = {
 export type LsRemoteResult = {
   refs: RemoteRef[];
   capabilities: string[];
+  protocol: 1 | 2;
 };
 
 export type FetchLike = (
@@ -208,7 +209,7 @@ function parseLsRefs(buffer: Buffer): LsRemoteResult {
       }
     }
   }
-  return { refs, capabilities };
+  return { refs, capabilities, protocol: 2 };
 }
 
 async function lsRefsHttps(url: string, fetchImpl: FetchLike): Promise<LsRemoteResult> {
@@ -267,12 +268,11 @@ export async function lsRemoteHttps(
   fetchImpl: FetchLike = defaultFetch,
 ): Promise<LsRemoteResult> {
   const url = normalizeHttpUrl(repositoryUrl);
-  // Do not send Git-Protocol version=2 until fetchHttps speaks command=fetch.
-  // A v2 advertisement plus a v1 want body fails against current hosts.
   const response = await fetchImpl(`${url}/info/refs?service=${SERVICE}`, {
     method: "GET",
     headers: {
       accept: `application/x-${SERVICE}-advertisement`,
+      "Git-Protocol": "version=2",
     },
   });
   if (response.status === 401) {
@@ -295,5 +295,5 @@ export async function lsRemoteHttps(
     }
     return lsRefsHttps(url, fetchImpl);
   }
-  return { refs: advertisement.refs, capabilities: advertisement.capabilities };
+  return { refs: advertisement.refs, capabilities: advertisement.capabilities, protocol: 1 };
 }

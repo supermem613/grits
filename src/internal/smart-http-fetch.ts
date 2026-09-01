@@ -84,6 +84,19 @@ function buildWantBody(heads: RemoteRef[]): Buffer {
   return Buffer.concat([...lines, Buffer.from("0000", "ascii"), encodePkt("done\n")]);
 }
 
+function buildFetchV2Body(heads: RemoteRef[]): Buffer {
+  const oids = [...new Set(heads.map((ref) => ref.oid))];
+  return Buffer.concat([
+    encodePkt("command=fetch\n"),
+    Buffer.from("0001", "ascii"),
+    ...oids.map((oid) => encodePkt(`want ${oid}\n`)),
+    encodePkt("ofs-delta\n"),
+    encodePkt("no-progress\n"),
+    encodePkt("done\n"),
+    Buffer.from("0000", "ascii"),
+  ]);
+}
+
 function unpackSidebandPack(buffer: Buffer): Buffer {
   const lines = readPktLines(buffer);
   const packChunks: Buffer[] = [];
@@ -92,7 +105,7 @@ function unpackSidebandPack(buffer: Buffer): Buffer {
       continue;
     }
     const text = line.toString("utf8").replace(/\n$/, "");
-    if (text === "NAK" || text.startsWith("ACK ")) {
+    if (text === "NAK" || text === "packfile" || text.startsWith("ACK ")) {
       continue;
     }
     const channel = line[0];
@@ -140,13 +153,18 @@ export async function fetchHttps(
   const advertised = await lsRemoteHttps(repositoryUrl, fetchImpl);
   const heads = headsToWant(advertised.refs);
   const url = repositoryUrl.replace(/\/+$/, "");
+  const useV2 = advertised.protocol === 2;
+  const headers: Record<string, string> = {
+    "content-type": `application/x-${SERVICE}-request`,
+    accept: `application/x-${SERVICE}-result`,
+  };
+  if (useV2) {
+    headers["Git-Protocol"] = "version=2";
+  }
   const response = await fetchImpl(`${url}/${SERVICE}`, {
     method: "POST",
-    headers: {
-      "content-type": `application/x-${SERVICE}-request`,
-      accept: `application/x-${SERVICE}-result`,
-    },
-    body: new Uint8Array(buildWantBody(heads)),
+    headers,
+    body: new Uint8Array(useV2 ? buildFetchV2Body(heads) : buildWantBody(heads)),
   });
   if (response.status === 401) {
     fail("NYI", "NYI: fetchHttps does not send credentials.");
