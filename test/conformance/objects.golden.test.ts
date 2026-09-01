@@ -54,7 +54,10 @@ describe("objects family goldens", () => {
       await withOracleRepo(async (repositoryPath) => {
         const oracleId = gitId(repositoryPath, ["hash-object", "--stdin"], "golden-blob\n");
         assert.match(oracleId, /^[0-9a-f]{40}$/);
-        assert.equal(await invokePalSlot(slotId), oracleId);
+        assert.equal(
+          await invokePalSlot(slotId, { repositoryPath, stdin: "golden-blob\n" }),
+          oracleId,
+        );
       });
     });
   }

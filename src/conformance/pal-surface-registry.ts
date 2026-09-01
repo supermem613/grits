@@ -1,4 +1,6 @@
 import { GritsError } from "../api/errors.js";
+import { hashBlob } from "../internal/hash-blob.js";
+import { writeLooseBlob } from "../internal/loose-object.js";
 
 const PAL_SLOTS_BY_FAMILY = {
   objects: [
@@ -118,13 +120,53 @@ export const nyiPalSlotIds: readonly string[] = Object.freeze(
   palSlotIds.filter((slotId) => palSlotToCanonicalOperation[slotId] === undefined),
 );
 
-export async function invokePalSlot(slotId: string): Promise<never> {
+export type PalSlotContext = {
+  repositoryPath?: string;
+  stdin?: string;
+};
+
+export async function invokePalSlot(
+  slotId: string,
+  context: PalSlotContext = {},
+): Promise<string> {
   if (!nyiPalSlotIds.includes(slotId)) {
     throw new GritsError(
       "INVALID_CONFIG",
       "invokePalSlot only accepts NYI PAL slot IDs.",
       slotId,
     );
+  }
+
+  const hashObjectSlots = new Set([
+    "objects.hashObjectStdin",
+    "objects.hashObjectForPath",
+    "objects.hashObjectNoWrite",
+    "objects.hashObjectForPathNoWrite",
+    "objects.hashObjectWriteBatch",
+    "objects.hashObjectWriteBatchAsync",
+  ]);
+  if (hashObjectSlots.has(slotId)) {
+    if (typeof context.stdin !== "string") {
+      throw new GritsError(
+        "INVALID_CONFIG",
+        "invokePalSlot requires stdin for object hash slots.",
+        slotId,
+      );
+    }
+
+    const content = Buffer.from(context.stdin);
+    const id = hashBlob(content);
+    if (
+      (slotId === "objects.hashObjectStdin" ||
+        slotId === "objects.hashObjectForPath" ||
+        slotId === "objects.hashObjectWriteBatch" ||
+        slotId === "objects.hashObjectWriteBatchAsync") &&
+      typeof context.repositoryPath === "string" &&
+      context.repositoryPath.length > 0
+    ) {
+      await writeLooseBlob(context.repositoryPath, content);
+    }
+    return id;
   }
 
   throw new GritsError(
