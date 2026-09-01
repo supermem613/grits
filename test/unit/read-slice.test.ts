@@ -4,7 +4,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { createGrits, GritsError } from "../../src/index.js";
+import { createGrits } from "../../src/index.js";
+import { matchesGritsError } from "../helpers/grits-error.js";
 
 function git(repositoryPath: string, args: readonly string[]): string {
   return execFileSync("git", [...args], {
@@ -29,7 +30,7 @@ describe("Grits read slice", () => {
       kind: "commit" as const,
       id: "commit-id",
       tree: tree.id,
-      parents: [] as string[],
+      parents: new Array<string>(),
       message: "memory commit",
     };
     const ref = { name: "HEAD", objectId: commit.id };
@@ -80,12 +81,9 @@ describe("Grits read slice", () => {
     assert.equal(Object.isFrozen(actualCommit.parents), true);
     assert.equal(Object.isFrozen(actualRef), true);
 
-    await assert.rejects(grits.objects.read("missing-object"), (error: unknown) => {
-      assert.equal(error instanceof GritsError, true);
-      assert.equal((error as GritsError).code, "NOT_FOUND");
-      assert.equal((error as GritsError).operation, "objects.read");
-      return true;
-    });
+    await assert.rejects(grits.objects.read("missing-object"), (error: Error) =>
+      matchesGritsError(error, "NOT_FOUND", "objects.read"),
+    );
     assert.equal(await grits.refs.resolve("missing-ref"), null);
   });
 
@@ -137,12 +135,10 @@ describe("Grits read slice", () => {
       assert.equal(Object.isFrozen(commit.parents), true);
       assert.equal(Object.isFrozen(head), true);
 
-      await assert.rejects(grits.objects.read("0000000000000000000000000000000000000000"), (error: unknown) => {
-        assert.equal(error instanceof GritsError, true);
-        assert.equal((error as GritsError).code, "NOT_FOUND");
-        assert.equal((error as GritsError).operation, "objects.read");
-        return true;
-      });
+      await assert.rejects(
+        grits.objects.read("0000000000000000000000000000000000000000"),
+        (error: Error) => matchesGritsError(error, "NOT_FOUND", "objects.read"),
+      );
       assert.equal(await grits.refs.resolve("refs/does-not-exist"), null);
 
       git(repositoryPath, ["repack", "-ad"]);

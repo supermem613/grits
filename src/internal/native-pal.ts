@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { GritsError } from "../api/errors.js";
+import { isNonEmptyString, isRuntimeString } from "./runtime-type.js";
 import { blamePorcelain } from "./blame-porcelain.js";
 import { copyGitDir, requireLocalCloneSource } from "./clone-local.js";
 import { configGet, originUrl } from "./git-config.js";
@@ -291,41 +292,41 @@ export async function runPalSlot(slotId: string, context: PalSlotContext): Promi
 }
 
 function requireRepo(slotId: string, context: PalSlotContext): string {
-  if (typeof context.repositoryPath !== "string" || context.repositoryPath.length === 0) {
+  if (!isNonEmptyString(context.repositoryPath)) {
     throw new GritsError("INVALID_CONFIG", "invokePalSlot requires repositoryPath.", slotId);
   }
   return context.repositoryPath;
 }
 
 function requireName(slotId: string, context: PalSlotContext): string {
-  if (typeof context.name !== "string" || context.name.length === 0) {
+  if (!isNonEmptyString(context.name)) {
     throw new GritsError("INVALID_CONFIG", "invokePalSlot requires name.", slotId);
   }
   return context.name;
 }
 
 function requirePath(slotId: string, context: PalSlotContext): string {
-  if (typeof context.path !== "string" || context.path.length === 0) {
+  if (!isNonEmptyString(context.path)) {
     throw new GritsError("INVALID_CONFIG", "invokePalSlot requires path.", slotId);
   }
   return context.path;
 }
 
 function requireDest(slotId: string, context: PalSlotContext): string {
-  if (typeof context.dest !== "string" || context.dest.length === 0) {
+  if (!isNonEmptyString(context.dest)) {
     throw new GritsError("INVALID_CONFIG", "invokePalSlot requires dest.", slotId);
   }
   return context.dest;
 }
 
 async function hashObjectSlot(slotId: string, context: PalSlotContext): Promise<string> {
-  if (typeof context.stdin !== "string") {
+  if (!isRuntimeString(context.stdin)) {
     throw new GritsError("INVALID_CONFIG", "invokePalSlot requires stdin for object hash slots.", slotId);
   }
   const content = Buffer.from(context.stdin);
   if (
     (slotId === "objects.hashObjectForPath" || slotId === "objects.hashObjectForPathNoWrite") &&
-    typeof context.path === "string"
+    isRuntimeString(context.path)
   ) {
     const fileBytes = await readFile(join(requireRepo(slotId, context), context.path));
     const id = hashBlob(fileBytes);
@@ -352,7 +353,7 @@ async function hashObjectSlot(slotId: string, context: PalSlotContext): Promise<
     slotId === "objects.hashObjectWriteBatch" ||
     slotId === "objects.hashObjectWriteBatchAsync"
   ) {
-    if (typeof context.repositoryPath === "string" && context.repositoryPath.length > 0) {
+    if (isNonEmptyString(context.repositoryPath)) {
       await writeLooseBlob(context.repositoryPath, content);
     }
   }
@@ -495,7 +496,7 @@ async function removeFromIndex(repositoryPath: string, path: string): Promise<st
 async function updateIndexCacheinfo(slotId: string, context: PalSlotContext): Promise<string> {
   const path = requirePath(slotId, context);
   const id = context.newId;
-  if (typeof id !== "string" || !/^[0-9a-f]{40}$/i.test(id)) {
+  if (!isRuntimeString(id) || !/^[0-9a-f]{40}$/i.test(id)) {
     throw new GritsError("INVALID_CONFIG", "updateIndexCacheinfo requires newId.", slotId);
   }
   return updateIndexInfo(slotId, {
@@ -902,7 +903,7 @@ async function rmWorktreeFile(path: string): Promise<void> {
 async function cloneRepository(slotId: string, context: PalSlotContext): Promise<string> {
   const source = context.path ?? context.target;
   const dest = context.dest;
-  if (typeof source !== "string" || source.length === 0 || typeof dest !== "string" || dest.length === 0) {
+  if (!isNonEmptyString(source) || !isNonEmptyString(dest)) {
     throw new GritsError("INVALID_CONFIG", "clone requires path and dest.", slotId);
   }
   requireLocalCloneSource(slotId, source);

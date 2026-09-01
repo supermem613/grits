@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { readLooseBlob, writeLooseBlob } from "../../src/internal/loose-object.ts";
+import { readLooseBlob, writeLooseBlob } from "../../src/internal/loose-object.js";
 
 test("reads a git-written loose blob", async () => {
   const repositoryPath = mkdtempSync(join(tmpdir(), "loose-blob-"));

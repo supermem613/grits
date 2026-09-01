@@ -13,12 +13,32 @@ const OBJ_BLOB = 3;
 const OBJ_TAG = 4;
 const OBJ_OFS_DELTA = 6;
 const OBJ_REF_DELTA = 7;
-const TYPE_NAME: Record<number, GitObject["type"]> = {
-  [OBJ_COMMIT]: "commit",
-  [OBJ_TREE]: "tree",
-  [OBJ_BLOB]: "blob",
-  [OBJ_TAG]: "tag",
-};
+function isEnoent(error: Error): boolean {
+  return "code" in error && error.code === "ENOENT";
+}
+
+function objectTypeFromHeader(value: string): GitObject["type"] {
+  if (value === "commit" || value === "tree" || value === "blob" || value === "tag") {
+    return value;
+  }
+  throw new Error(`Invalid object header type ${value}`);
+}
+
+function packedTypeName(type: number): GitObject["type"] | undefined {
+  if (type === OBJ_COMMIT) {
+    return "commit";
+  }
+  if (type === OBJ_TREE) {
+    return "tree";
+  }
+  if (type === OBJ_BLOB) {
+    return "blob";
+  }
+  if (type === OBJ_TAG) {
+    return "tag";
+  }
+  return undefined;
+}
 
 type PackIndex = {
   idxPath: string;
@@ -58,7 +78,7 @@ function inflateStream(input: Buffer): Promise<Buffer> {
   });
 }
 
-function decodeSize(pack: Buffer, offset: number): { type: number; size: number; pos: number } {
+function decodeSize(pack: Buffer, offset: number) {
   let pos = offset;
   let byte = pack[pos];
   pos += 1;
@@ -74,7 +94,7 @@ function decodeSize(pack: Buffer, offset: number): { type: number; size: number;
   return { type, size, pos };
 }
 
-function decodeOfsDelta(pack: Buffer, pos: number): { baseDistance: number; pos: number } {
+function decodeOfsDelta(pack: Buffer, pos: number) {
   let byte = pack[pos];
   pos += 1;
   let baseDistance = byte & 0x7f;
@@ -88,7 +108,7 @@ function decodeOfsDelta(pack: Buffer, pos: number): { baseDistance: number; pos:
   return { baseDistance, pos };
 }
 
-function decodeVarInt(delta: Buffer, pos: number): { value: number; pos: number } {
+function decodeVarInt(delta: Buffer, pos: number) {
   let byte = delta[pos];
   pos += 1;
   let value = byte & 0x7f;
@@ -271,11 +291,11 @@ async function readLooseOnly(repositoryPath: string, id: string): Promise<GitObj
       throw new Error(`Invalid object header for ${id}`);
     }
     return {
-      type: match[1] as GitObject["type"],
+      type: objectTypeFromHeader(match[1]),
       payload: Buffer.from(inflated.subarray(separator + 1)),
     };
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (error instanceof Error && isEnoent(error)) {
       return null;
     }
     throw error;
@@ -320,7 +340,7 @@ async function readAtOffset(
     }
     return { type: base.type, payload: applyDelta(base.payload, delta) };
   }
-  const type = TYPE_NAME[header.type];
+  const type = packedTypeName(header.type);
   if (type === undefined) {
     throw new Error(`Unknown packed object type ${header.type}.`);
   }

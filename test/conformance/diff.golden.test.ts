@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
+import { isRuntimeString } from "../../src/internal/runtime-type.js";
 
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
@@ -110,7 +111,10 @@ describe("diff family goldens", () => {
       try {
         expected = git(repositoryPath, ["-c", "core.abbrev=7", "diff", "--no-index", "--no-color", "left.txt", "right.txt"]);
       } catch (error) {
-        expected = (error as { stdout?: string }).stdout ?? "";
+        expected =
+          error instanceof Error && "stdout" in error && isRuntimeString(error.stdout)
+            ? error.stdout
+            : "";
       }
       assert.equal(actual, expected);
     });
