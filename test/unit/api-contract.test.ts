@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits, GritsError } from "../../src/index.js";
+import { createGrits } from "../../src/index.js";
+import { matchesGritsError } from "../helpers/grits-error.js";
 
 describe("Grits public API contract", () => {
   it("creates a frozen memory repository handle with supported async operations", async () => {
@@ -26,12 +27,9 @@ describe("Grits public API contract", () => {
 
     const read = grits.objects.read("missing-object");
     assert.equal(read instanceof Promise, true);
-    await assert.rejects(read, (error: unknown) => {
-      assert.equal(error instanceof GritsError, true);
-      assert.equal((error as GritsError).code, "NOT_FOUND");
-      assert.equal((error as GritsError).operation, "objects.read");
-      return true;
-    });
+    await assert.rejects(read, (error: Error) =>
+      matchesGritsError(error, "NOT_FOUND", "objects.read"),
+    );
 
     const resolve = grits.refs.resolve("missing-ref");
     assert.equal(resolve instanceof Promise, true);

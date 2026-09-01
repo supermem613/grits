@@ -4,22 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { GritsError } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
-
-const NYI_COMMIT_SLOTS = [
-  "commit.commitTree",
-  "commit.lsTreeNameOnly",
-  "commit.lsTreeNameOnlyZ",
-  "commit.lsTreeRecursiveZ",
-  "commit.lsTreePath",
-  "commit.lsTreeInfoZ",
-  "commit.mktree",
-  "commit.show",
-  "commit.logFormat",
-  "commit.revListParents",
-  "commit.catFileType",
-] as const;
 
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
@@ -51,23 +36,118 @@ function withOracleRepo<T>(run: (repositoryPath: string) => T | Promise<T>): Pro
 }
 
 describe("commit family goldens", () => {
-  for (const slotId of NYI_COMMIT_SLOTS) {
-    it(`spawns git then rejects ${slotId} as NYI`, async () => {
-      await withOracleRepo(async (repositoryPath) => {
-        const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
-        assert.match(headId, /^[0-9a-f]{40}$/);
-        const objectType = gitId(repositoryPath, ["cat-file", "-t", headId]);
-        assert.equal(objectType, "commit");
-        await assert.rejects(
-          () => invokePalSlot(slotId),
-          (error: unknown) => {
-            assert.equal(error instanceof GritsError, true);
-            assert.equal((error as GritsError).code, "UNSUPPORTED_CAPABILITY");
-            assert.equal((error as GritsError).operation, slotId);
-            return true;
-          },
-        );
-      });
+  it("lsTreeNameOnly matches git ls-tree --name-only HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+      const listed = await invokePalSlot("commit.lsTreeNameOnly", { repositoryPath, rev: "HEAD" });
+      assert.equal(listed, git(repositoryPath, ["ls-tree", "--name-only", "HEAD"]));
+      assert.notEqual(listed.trim(), headId);
     });
-  }
+  });
+
+  it("lsTreeNameOnlyZ uses NUL separators", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("commit.lsTreeNameOnlyZ", { repositoryPath, rev: "HEAD" }),
+        git(repositoryPath, ["ls-tree", "--name-only", "-z", "HEAD"]),
+      );
+    });
+  });
+
+  it("lsTreeRecursiveZ matches git ls-tree -r -z HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("commit.lsTreeRecursiveZ", { repositoryPath, rev: "HEAD" }),
+        git(repositoryPath, ["ls-tree", "-r", "-z", "HEAD"]),
+      );
+    });
+  });
+
+  it("lsTreePath matches git ls-tree HEAD -- path", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("commit.lsTreePath", {
+          repositoryPath,
+          rev: "HEAD",
+          path: "commit-golden.txt",
+        }),
+        git(repositoryPath, ["ls-tree", "HEAD", "--", "commit-golden.txt"]),
+      );
+    });
+  });
+
+  it("catFileType matches git cat-file -t HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+      assert.equal(
+        await invokePalSlot("commit.catFileType", { repositoryPath, rev: headId }),
+        git(repositoryPath, ["cat-file", "-t", headId]),
+      );
+    });
+  });
+
+  it("show returns the commit message, not the commit id", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const headId = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+      const shown = await invokePalSlot("commit.show", { repositoryPath, rev: "HEAD" });
+      assert.match(shown, /golden-commit/);
+      assert.notEqual(shown.trim(), headId);
+    });
+  });
+
+  it("logFormat returns the subject", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        (await invokePalSlot("commit.logFormat", { repositoryPath, rev: "HEAD" })).trim(),
+        gitId(repositoryPath, ["log", "-1", "--format=%s"]),
+      );
+    });
+  });
+
+  it("revListParents matches git rev-list --parents -n 1 HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("commit.revListParents", { repositoryPath, rev: "HEAD" }),
+        git(repositoryPath, ["rev-list", "--parents", "-n", "1", "HEAD"]),
+      );
+    });
+  });
+
+  it("commitTree writes a commit object for the current tree", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const tree = gitId(repositoryPath, ["write-tree"]);
+      const parent = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+      const id = await invokePalSlot("commit.commitTree", {
+        repositoryPath,
+        tree,
+        parents: [parent],
+        message: "from-pal",
+      });
+      assert.match(id, /^[0-9a-f]{40}$/);
+      assert.equal(gitId(repositoryPath, ["cat-file", "-t", id]), "commit");
+      assert.equal(gitId(repositoryPath, ["rev-parse", `${id}^{tree}`]), tree);
+    });
+  });
+
+  it("mktree matches git mktree", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const blob = gitId(repositoryPath, ["hash-object", "-w", "--stdin"], "tree-entry\n");
+      const stdin = `100644 blob ${blob}\tmktree.txt\n`;
+      const oracle = gitId(repositoryPath, ["mktree"], stdin);
+      assert.equal(await invokePalSlot("commit.mktree", { repositoryPath, stdin }), oracle);
+    });
+  });
+
+  it("lsTreeInfoZ matches git ls-tree -z HEAD -- path", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("commit.lsTreeInfoZ", {
+          repositoryPath,
+          rev: "HEAD",
+          path: "commit-golden.txt",
+        }),
+        git(repositoryPath, ["ls-tree", "-z", "HEAD", "--", "commit-golden.txt"]),
+      );
+    });
+  });
 });

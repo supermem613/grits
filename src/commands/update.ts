@@ -106,7 +106,11 @@ function writeHuman(result: UpdateResult): void {
   process.stdout.write("Pulled new changes. Dependencies installed. Build complete.\n");
 }
 
-function writeJson(value: unknown): void {
+type UpdateJsonResult =
+  | { ok: true; command: "update"; data: UpdateResult }
+  | { ok: false; command: "update"; error: "UPDATE_FAILED"; hint: string };
+
+function writeJson(value: UpdateJsonResult): void {
   process.stdout.write(JSON.stringify(value) + "\n");
 }
 
@@ -118,8 +122,8 @@ export async function updateCommand(opts: UpdateOptions = {}): Promise<void> {
     } else {
       writeHuman(result);
     }
-  } catch (err: unknown) {
-    const hint = err instanceof Error ? err.message : String(err);
+  } catch (err) {
+    const hint = err instanceof Error ? err.message : "update failed";
     if (opts.json) {
       writeJson({ ok: false, command: "update", error: "UPDATE_FAILED", hint });
     } else {

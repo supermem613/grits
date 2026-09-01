@@ -7,10 +7,20 @@ import { dirname, join } from "node:path";
 import { doctorCommand } from "./commands/doctor.js";
 import { schemaCommand } from "./commands/schema.js";
 import { updateCommand } from "./commands/update.js";
+import { isObjectOrNull, isRuntimeString } from "./internal/runtime-type.js";
 
 // Read version from package.json so it stays in sync with the published version.
 const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
-const VERSION = (JSON.parse(readFileSync(pkgPath, "utf8")) as { version: string }).version;
+const parsedPackage = JSON.parse(readFileSync(pkgPath, "utf8"));
+if (
+  !isObjectOrNull(parsedPackage) ||
+  parsedPackage === null ||
+  !("version" in parsedPackage) ||
+  !isRuntimeString(parsedPackage.version)
+) {
+  throw new Error("package.json version is missing");
+}
+const VERSION = parsedPackage.version;
 
 const program = new Command();
 

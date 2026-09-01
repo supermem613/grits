@@ -4,17 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits, GritsError } from "../../src/index.js";
+import { createGrits } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
-
-const NYI_OBJECT_SLOTS = [
-  "objects.hashObjectStdin",
-  "objects.hashObjectForPath",
-  "objects.hashObjectNoWrite",
-  "objects.hashObjectForPathNoWrite",
-  "objects.hashObjectWriteBatch",
-  "objects.hashObjectWriteBatchAsync",
-] as const;
 
 const MAPPED_OBJECT_SLOTS = [
   "objects.catBlob",
@@ -49,23 +40,111 @@ function withOracleRepo<T>(run: (repositoryPath: string) => T | Promise<T>): Pro
 }
 
 describe("objects family goldens", () => {
-  for (const slotId of NYI_OBJECT_SLOTS) {
-    it(`spawns git then rejects ${slotId} as NYI`, async () => {
-      await withOracleRepo(async (repositoryPath) => {
-        const oracleId = gitId(repositoryPath, ["hash-object", "--stdin"], "golden-blob\n");
-        assert.match(oracleId, /^[0-9a-f]{40}$/);
-        await assert.rejects(
-          () => invokePalSlot(slotId),
-          (error: unknown) => {
-            assert.equal(error instanceof GritsError, true);
-            assert.equal((error as GritsError).code, "UNSUPPORTED_CAPABILITY");
-            assert.equal((error as GritsError).operation, slotId);
-            return true;
-          },
-        );
+  it("hashObjectNoWrite matches git hash-object --stdin and does not write", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const oracleId = gitId(repositoryPath, ["hash-object", "--stdin"], "golden-blob\n");
+      const id = await invokePalSlot("objects.hashObjectNoWrite", {
+        repositoryPath,
+        stdin: "golden-blob\n",
       });
+      assert.equal(id, oracleId);
+      let missing = "gone";
+      try {
+        gitId(repositoryPath, ["cat-file", "-t", id]);
+        missing = "present";
+      } catch {
+        missing = "gone";
+      }
+      assert.equal(missing, "gone");
     });
-  }
+  });
+
+  it("hashObjectStdin writes the blob", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const oracleId = gitId(repositoryPath, ["hash-object", "--stdin"], "golden-blob\n");
+      const id = await invokePalSlot("objects.hashObjectStdin", {
+        repositoryPath,
+        stdin: "golden-blob\n",
+      });
+      assert.equal(id, oracleId);
+      assert.equal(gitId(repositoryPath, ["cat-file", "-t", id]), "blob");
+    });
+  });
+
+  it("hashObjectForPath hashes the file at path", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(join(repositoryPath, "path-blob.txt"), "golden-blob\n", "utf8");
+      const oracleId = gitId(repositoryPath, ["hash-object", "--path=path-blob.txt", "--stdin"], "golden-blob\n");
+      assert.equal(
+        await invokePalSlot("objects.hashObjectForPath", {
+          repositoryPath,
+          path: "path-blob.txt",
+          stdin: "golden-blob\n",
+        }),
+        oracleId,
+      );
+    });
+  });
+
+  it("hashObjectForPathNoWrite hashes the file and does not write", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(join(repositoryPath, "path-blob.txt"), "golden-blob\n", "utf8");
+      const oracleId = gitId(repositoryPath, ["hash-object", "path-blob.txt"]);
+      const id = await invokePalSlot("objects.hashObjectForPathNoWrite", {
+        repositoryPath,
+        path: "path-blob.txt",
+        stdin: "",
+      });
+      assert.equal(id, oracleId);
+      let missing = "gone";
+      try {
+        gitId(repositoryPath, ["cat-file", "-t", id]);
+        missing = "present";
+      } catch {
+        missing = "gone";
+      }
+      assert.equal(missing, "gone");
+    });
+  });
+
+  it("hashObjectWriteBatch hashes each path", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(join(repositoryPath, "a.txt"), "a\n", "utf8");
+      writeFileSync(join(repositoryPath, "b.txt"), "b\n", "utf8");
+      const ids = await invokePalSlot("objects.hashObjectWriteBatch", {
+        repositoryPath,
+        stdin: "",
+        paths: ["a.txt", "b.txt"],
+      });
+      const expected = [
+        gitId(repositoryPath, ["hash-object", "a.txt"]),
+        gitId(repositoryPath, ["hash-object", "b.txt"]),
+      ].join("\n");
+      assert.equal(ids, expected);
+    });
+  });
+
+  it("hashObjectWriteBatchAsync matches hashObjectWriteBatch", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(join(repositoryPath, "a.txt"), "a\n", "utf8");
+      writeFileSync(join(repositoryPath, "b.txt"), "b\n", "utf8");
+      const ids = await invokePalSlot("objects.hashObjectWriteBatchAsync", {
+        repositoryPath,
+        stdin: "",
+        paths: ["a.txt", "b.txt"],
+      });
+      const expected = [
+        gitId(repositoryPath, ["hash-object", "a.txt"]),
+        gitId(repositoryPath, ["hash-object", "b.txt"]),
+      ].join("\n");
+      assert.equal(ids, expected);
+      assert.equal(gitId(repositoryPath, ["cat-file", "-t", ids.split("\n")[0]]), "blob");
+    });
+  });
 
   for (const slotId of MAPPED_OBJECT_SLOTS) {
     it(`spawns git then matches objects.read for ${slotId}`, async () => {

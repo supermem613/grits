@@ -2,21 +2,15 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createGrits } from "grits";
+import { isPlainObject, isRuntimeFunction } from "../../src/internal/runtime-type.js";
 
-const packageJson = JSON.parse(
+const parsedPackage = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
-) as {
-  exports?: {
-    ".": {
-      types?: string;
-      import?: string;
-    };
-  };
-  types?: string;
-  bin?: {
-    grits?: string;
-  };
-};
+);
+if (!isPlainObject(parsedPackage)) {
+  throw new Error("package.json is not an object");
+}
+const packageJson = parsedPackage;
 
 test("package declaration exposes the built Grits root", () => {
   assert.deepEqual(packageJson.exports?.["."], {
@@ -28,7 +22,7 @@ test("package declaration exposes the built Grits root", () => {
 });
 
 test("package-name import exposes createGrits", () => {
-  assert.equal(typeof createGrits, "function");
+  assert.equal(isRuntimeFunction(createGrits), true);
   assert.equal(
     createGrits({ repository: { kind: "memory" } }).capabilities.repository,
     "memory",

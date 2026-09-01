@@ -12,7 +12,14 @@ import type {
   ObjectsApi,
   RefResolution,
   RefsApi,
+  TreeEntry,
 } from "./api/types.js";
+import {
+  isObjectOrNull,
+  isPlainObject,
+  isRuntimeNumber,
+  isRuntimeString,
+} from "./internal/runtime-type.js";
 
 export { GritsError } from "./api/errors.js";
 export type { GritsErrorCode } from "./api/errors.js";
@@ -39,66 +46,106 @@ export type {
   TreeObject,
 } from "./api/types.js";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+function isTreeEntry<T>(value: T): value is T & TreeEntry {
+  return (
+    isPlainObject(value) &&
+    "mode" in value &&
+    isRuntimeString(value.mode) &&
+    "name" in value &&
+    isRuntimeString(value.name) &&
+    "objectId" in value &&
+    isRuntimeString(value.objectId)
+  );
 }
 
-function isGitObject(value: unknown): value is GitObject {
-  if (!isRecord(value) || typeof value.kind !== "string" || typeof value.id !== "string") {
+function isGitObject<T>(value: T): value is T & GitObject {
+  if (
+    !isPlainObject(value) ||
+    !("kind" in value) ||
+    !isRuntimeString(value.kind) ||
+    !("id" in value) ||
+    !isRuntimeString(value.id)
+  ) {
     return false;
   }
 
   if (value.kind === "blob") {
-    return Array.isArray(value.bytes) && value.bytes.every((byte) => typeof byte === "number");
+    return (
+      "bytes" in value &&
+      Array.isArray(value.bytes) &&
+      value.bytes.every((byte) => isRuntimeNumber(byte))
+    );
   }
 
   if (value.kind === "tree") {
     return (
+      "entries" in value &&
       Array.isArray(value.entries) &&
       value.entries.every(
-        (entry) =>
-          isRecord(entry) &&
-          typeof entry.mode === "string" &&
-          typeof entry.name === "string" &&
-          typeof entry.objectId === "string",
+        (entry) => isObjectOrNull(entry) && entry !== null && isTreeEntry(entry),
       )
     );
   }
 
   return (
     value.kind === "commit" &&
-    typeof value.tree === "string" &&
-    typeof value.message === "string" &&
+    "tree" in value &&
+    isRuntimeString(value.tree) &&
+    "message" in value &&
+    isRuntimeString(value.message) &&
+    "parents" in value &&
     Array.isArray(value.parents) &&
-    value.parents.every((parent) => typeof parent === "string")
+    value.parents.every((parent) => isRuntimeString(parent))
   );
 }
 
-function isRefResolution(value: unknown): value is RefResolution {
+function isRefResolution<T>(value: T): value is T & RefResolution {
   return (
-    isRecord(value) &&
-    typeof value.name === "string" &&
-    typeof value.objectId === "string"
+    isPlainObject(value) &&
+    "name" in value &&
+    isRuntimeString(value.name) &&
+    "objectId" in value &&
+    isRuntimeString(value.objectId)
   );
 }
 
-function isMemorySeed(value: unknown): value is MemorySeed {
-  if (!isRecord(value)) {
+function isMemorySeed<T>(value: T): value is T & MemorySeed {
+  if (!isPlainObject(value)) {
     return false;
   }
 
   const objectsValid =
+    !("objects" in value) ||
     value.objects === undefined ||
-    (Array.isArray(value.objects) && value.objects.every((object) => isGitObject(object)));
+    (Array.isArray(value.objects) &&
+      value.objects.every(
+        (object) => isObjectOrNull(object) && object !== null && isGitObject(object),
+      ));
   const refsValid =
+    !("refs" in value) ||
     value.refs === undefined ||
-    (Array.isArray(value.refs) && value.refs.every((ref) => isRefResolution(ref)));
+    (Array.isArray(value.refs) &&
+      value.refs.every(
+        (ref) => isObjectOrNull(ref) && ref !== null && isRefResolution(ref),
+      ));
 
   return objectsValid && refsValid;
 }
 
-function assertValidConfig(value: unknown): asserts value is GritsConfig {
-  if (!isRecord(value) || !isRecord(value.repository)) {
+function assertValidConfig(value: GritsConfig): void {
+  if (!isObjectOrNull(value) || value === null || !isPlainObject(value)) {
+    throw new GritsError(
+      "INVALID_CONFIG",
+      "A repository descriptor is required.",
+      "createGrits",
+    );
+  }
+  if (
+    !("repository" in value) ||
+    !isObjectOrNull(value.repository) ||
+    value.repository === null ||
+    !isPlainObject(value.repository)
+  ) {
     throw new GritsError(
       "INVALID_CONFIG",
       "A repository descriptor is required.",
@@ -107,8 +154,19 @@ function assertValidConfig(value: unknown): asserts value is GritsConfig {
   }
 
   const repository = value.repository;
+  if (!("kind" in repository) || !isRuntimeString(repository.kind)) {
+    throw new GritsError(
+      "INVALID_CONFIG",
+      "A valid filesystem or memory repository descriptor is required.",
+      "createGrits",
+    );
+  }
   if (repository.kind === "filesystem") {
-    if (typeof repository.path !== "string" || repository.path.length === 0) {
+    if (
+      !("path" in repository) ||
+      !isRuntimeString(repository.path) ||
+      repository.path.length === 0
+    ) {
       throw new GritsError(
         "INVALID_CONFIG",
         "A non-empty filesystem path is required.",
@@ -118,9 +176,19 @@ function assertValidConfig(value: unknown): asserts value is GritsConfig {
     return;
   }
 
+  if (repository.kind !== "memory") {
+    throw new GritsError(
+      "INVALID_CONFIG",
+      "A valid filesystem or memory repository descriptor is required.",
+      "createGrits",
+    );
+  }
   if (
-    repository.kind !== "memory" ||
-    (repository.seed !== undefined && !isMemorySeed(repository.seed))
+    "seed" in repository &&
+    repository.seed !== undefined &&
+    (!isObjectOrNull(repository.seed) ||
+      repository.seed === null ||
+      !isMemorySeed(repository.seed))
   ) {
     throw new GritsError(
       "INVALID_CONFIG",

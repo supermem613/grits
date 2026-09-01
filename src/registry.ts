@@ -91,7 +91,45 @@ function pathMatchesPrefix(path: string[], prefix: string[]): boolean {
   return prefix.every((part, index) => path[index] === part);
 }
 
-export function buildSchema(cliVersion: string, pathPrefix: string[] = [], summary = false) {
+export type SchemaSummary = {
+  schemaVersion: number;
+  cliVersion: string;
+  commandCount: number;
+  commandPaths: string[][];
+};
+
+type SchemaExitCode = {
+  code: number;
+  meaning: string;
+};
+
+export type SchemaCatalog = {
+  schemaVersion: number;
+  cliVersion: string;
+  envelope: {
+    stdout: string;
+    stderr: string;
+    successEnvelope: string[];
+    errorEnvelope: string[];
+  };
+  globalFlags: FlagSpec[];
+  commands: CommandSpec[];
+  errorCodes: string[];
+  exitCodes: SchemaExitCode[];
+};
+
+export function buildSchema(cliVersion: string, pathPrefix?: string[], summary?: false): SchemaCatalog;
+export function buildSchema(cliVersion: string, pathPrefix: string[], summary: true): SchemaSummary;
+export function buildSchema(
+  cliVersion: string,
+  pathPrefix?: string[],
+  summary?: boolean,
+): SchemaCatalog | SchemaSummary;
+export function buildSchema(
+  cliVersion: string,
+  pathPrefix: string[] = [],
+  summary = false,
+): SchemaCatalog | SchemaSummary {
   const commands = commandSpecs.filter((command) => pathMatchesPrefix(command.path, pathPrefix));
   if (summary) {
     return {

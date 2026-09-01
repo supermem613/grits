@@ -1,6 +1,7 @@
 export type GritsErrorCode =
   | "INVALID_CONFIG"
   | "UNSUPPORTED_CAPABILITY"
+  | "NYI"
   | "NOT_FOUND"
   | "REPOSITORY_UNAVAILABLE";
 

@@ -4,14 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { GritsError } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
-
-const NYI_MERGE_SLOTS = [
-  "merge.mergeFfOnly",
-  "merge.rebaseOnto",
-  "merge.rebaseAbort",
-] as const;
 
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
@@ -50,21 +43,77 @@ function withOracleRepo<T>(
 }
 
 describe("merge family goldens", () => {
-  for (const slotId of NYI_MERGE_SLOTS) {
-    it(`spawns git then rejects ${slotId} as NYI`, async () => {
-      await withOracleRepo(async (repositoryPath, firstId, secondId) => {
-        const mergeBase = gitId(repositoryPath, ["merge-base", firstId, secondId]);
-        assert.equal(mergeBase, firstId);
-        await assert.rejects(
-          () => invokePalSlot(slotId),
-          (error: unknown) => {
-            assert.equal(error instanceof GritsError, true);
-            assert.equal((error as GritsError).code, "UNSUPPORTED_CAPABILITY");
-            assert.equal((error as GritsError).operation, slotId);
-            return true;
-          },
-        );
-      });
+  it("mergeFfOnly fast-forwards HEAD to the target", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, secondId) => {
+      gitId(repositoryPath, ["update-ref", "HEAD", firstId]);
+      assert.equal(
+        await invokePalSlot("merge.mergeFfOnly", { repositoryPath, target: secondId }),
+        "",
+      );
+      assert.equal(gitId(repositoryPath, ["rev-parse", "HEAD"]), secondId);
     });
-  }
+  });
+
+  it("rebaseAbort without state is INVALID_CONFIG, not NYI", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      await assert.rejects(
+        () => invokePalSlot("merge.rebaseAbort", { repositoryPath }),
+        (error: Error & { code?: string }) =>
+          error.code === "INVALID_CONFIG" && error.message.includes("No rebase in progress"),
+      );
+    });
+  });
+
+  it("rebaseOnto replays a linear first-parent commit", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, secondId) => {
+      const main = gitId(repositoryPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+      gitId(repositoryPath, ["update-ref", "HEAD", firstId]);
+      gitId(repositoryPath, ["checkout", "-B", "topic"]);
+      writeFileSync(join(repositoryPath, "topic.txt"), "topic\n", "utf8");
+      gitId(repositoryPath, ["add", "topic.txt"]);
+      gitId(repositoryPath, ["commit", "-m", "topic"]);
+      const topicTip = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+      gitId(repositoryPath, ["update-ref", `refs/heads/${main}`, secondId]);
+      assert.equal(
+        await invokePalSlot("merge.rebaseOnto", {
+          repositoryPath,
+          target: secondId,
+          otherRev: firstId,
+          name: "topic",
+        }),
+        "",
+      );
+      const rebased = gitId(repositoryPath, ["rev-parse", "refs/heads/topic"]);
+      assert.notEqual(rebased, topicTip);
+      assert.equal(gitId(repositoryPath, ["rev-parse", `${rebased}^`]), secondId);
+      assert.equal(gitId(repositoryPath, ["cat-file", "-p", `${rebased}:topic.txt`]), "topic");
+      assert.equal(gitId(repositoryPath, ["cat-file", "-p", `${rebased}:merge-golden.txt`]), "second");
+    });
+  });
+
+  it("rebaseOnto conflicts then abort restores ORIG_HEAD", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, secondId) => {
+      const main = gitId(repositoryPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+      gitId(repositoryPath, ["update-ref", "HEAD", firstId]);
+      gitId(repositoryPath, ["checkout", "-B", "topic"]);
+      writeFileSync(join(repositoryPath, "merge-golden.txt"), "topic-change\n", "utf8");
+      gitId(repositoryPath, ["add", "merge-golden.txt"]);
+      gitId(repositoryPath, ["commit", "-m", "topic-conflict"]);
+      const orig = gitId(repositoryPath, ["rev-parse", "HEAD"]);
+      gitId(repositoryPath, ["update-ref", `refs/heads/${main}`, secondId]);
+      await assert.rejects(
+        () =>
+          invokePalSlot("merge.rebaseOnto", {
+            repositoryPath,
+            target: secondId,
+            otherRev: firstId,
+            name: "topic",
+          }),
+        (error: Error & { code?: string }) =>
+          error.code === "INVALID_CONFIG" && error.message.startsWith("rebase conflict:"),
+      );
+      assert.equal(await invokePalSlot("merge.rebaseAbort", { repositoryPath }), "");
+      assert.equal(gitId(repositoryPath, ["rev-parse", "HEAD"]), orig);
+    });
+  });
 });

@@ -1,4 +1,5 @@
 import { GritsError } from "../api/errors.js";
+import { runPalSlot, type PalSlotContext } from "../internal/native-pal.js";
 
 const PAL_SLOTS_BY_FAMILY = {
   objects: [
@@ -118,7 +119,12 @@ export const nyiPalSlotIds: readonly string[] = Object.freeze(
   palSlotIds.filter((slotId) => palSlotToCanonicalOperation[slotId] === undefined),
 );
 
-export async function invokePalSlot(slotId: string): Promise<never> {
+export type { PalSlotContext };
+
+export async function invokePalSlot(
+  slotId: string,
+  context: PalSlotContext = {},
+): Promise<string> {
   if (!nyiPalSlotIds.includes(slotId)) {
     throw new GritsError(
       "INVALID_CONFIG",
@@ -127,9 +133,5 @@ export async function invokePalSlot(slotId: string): Promise<never> {
     );
   }
 
-  throw new GritsError(
-    "UNSUPPORTED_CAPABILITY",
-    `Capability ${slotId} is not implemented.`,
-    slotId,
-  );
+  return runPalSlot(slotId, context);
 }

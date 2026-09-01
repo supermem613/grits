@@ -4,17 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { GritsError } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
-
-const NYI_DIFF_SLOTS = [
-  "diff.nameStatusZ",
-  "diff.nameStatusZBetween",
-  "diff.noIndex",
-  "diff.unmergedNames",
-  "diff.cachedQuiet",
-  "diff.configShowOrigin",
-] as const;
+import { isRuntimeString } from "../../src/internal/runtime-type.js";
 
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
@@ -66,21 +57,83 @@ describe("diff family goldens", () => {
     });
   });
 
-  for (const slotId of NYI_DIFF_SLOTS) {
-    it(`spawns git then rejects ${slotId} as NYI`, async () => {
-      await withOracleRepo(async (repositoryPath, firstId, secondId) => {
-        const nameStatus = git(repositoryPath, ["diff", "--name-status", firstId, secondId]);
-        assert.match(nameStatus, /^M\tdiff-golden\.txt/);
-        await assert.rejects(
-          () => invokePalSlot(slotId),
-          (error: unknown) => {
-            assert.equal(error instanceof GritsError, true);
-            assert.equal((error as GritsError).code, "UNSUPPORTED_CAPABILITY");
-            assert.equal((error as GritsError).operation, slotId);
-            return true;
-          },
-        );
-      });
+  it("nameStatusZBetween matches git diff --name-status -z", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, secondId) => {
+      assert.equal(
+        await invokePalSlot("diff.nameStatusZBetween", {
+          repositoryPath,
+          rev: firstId,
+          otherRev: secondId,
+        }),
+        git(repositoryPath, ["diff", "--name-status", "-z", firstId, secondId]),
+      );
     });
-  }
+  });
+
+  it("nameStatusZ matches HEAD^ HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(
+        await invokePalSlot("diff.nameStatusZ", { repositoryPath }),
+        git(repositoryPath, ["diff", "--name-status", "-z", "HEAD^", "HEAD"]),
+      );
+    });
+  });
+
+  it("unmergedNames is empty without conflicts", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(await invokePalSlot("diff.unmergedNames", { repositoryPath }), "");
+    });
+  });
+
+  it("unmergedNames lists unique unmerged paths", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, _secondId) => {
+      const baseBlob = gitId(repositoryPath, ["rev-parse", `${firstId}:diff-golden.txt`]);
+      const oursBlob = gitId(repositoryPath, ["hash-object", "-w", "--stdin"], "ours\n");
+      const theirsBlob = gitId(repositoryPath, ["hash-object", "-w", "--stdin"], "theirs\n");
+      git(repositoryPath, ["update-index", "--index-info"], `100644 ${baseBlob} 1\tdiff-golden.txt\n100644 ${oursBlob} 2\tdiff-golden.txt\n100644 ${theirsBlob} 3\tdiff-golden.txt\n`);
+      assert.equal(
+        await invokePalSlot("diff.unmergedNames", { repositoryPath }),
+        git(repositoryPath, ["diff", "--name-only", "--diff-filter=U"]),
+      );
+    });
+  });
+
+  it("noIndex matches git unified diff", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      writeFileSync(join(repositoryPath, "left.txt"), "left\n", "utf8");
+      writeFileSync(join(repositoryPath, "right.txt"), "right\n", "utf8");
+      const actual = await invokePalSlot("diff.noIndex", {
+        repositoryPath,
+        path: "left.txt",
+        dest: "right.txt",
+      });
+      let expected = "";
+      try {
+        expected = git(repositoryPath, ["-c", "core.abbrev=7", "diff", "--no-index", "--no-color", "left.txt", "right.txt"]);
+      } catch (error) {
+        expected =
+          error instanceof Error && "stdout" in error && isRuntimeString(error.stdout)
+            ? error.stdout
+            : "";
+      }
+      assert.equal(actual, expected);
+    });
+  });
+
+  it("configShowOrigin reports the local config file", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const shown = await invokePalSlot("diff.configShowOrigin", {
+        repositoryPath,
+        path: "user.email",
+      });
+      assert.match(shown, /file:/);
+      assert.match(shown, /grits@example\.test/);
+    });
+  });
+
+  it("cachedQuiet is empty when the index matches HEAD", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      assert.equal(await invokePalSlot("diff.cachedQuiet", { repositoryPath }), "");
+    });
+  });
 });

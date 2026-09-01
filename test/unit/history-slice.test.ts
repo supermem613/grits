@@ -4,9 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits, GritsError } from "../../src/index.js";
+import { createGrits } from "../../src/index.js";
+import { matchesGritsError } from "../helpers/grits-error.js";
 
-function createGitFixture(): { path: string; first: string; second: string } {
+type GitHistoryFixture = {
+  path: string;
+  first: string;
+  second: string;
+};
+
+function createGitFixture(): GitHistoryFixture {
   const path = mkdtempSync(join(tmpdir(), "grits-history-"));
   const setup = (args: readonly string[]) => {
     execFileSync("git", [...args], {
@@ -83,7 +90,6 @@ describe("history.isAncestor", () => {
     });
 
     const publicResult = await grits.history.isAncestor("memory-first", "memory-second");
-    assert.equal(typeof publicResult, "boolean");
     assert.equal(publicResult, true);
     assert.equal(
       await grits.history.isAncestor("memory-second", "memory-first"),
@@ -96,23 +102,13 @@ describe("history.isAncestor", () => {
 
     await assert.rejects(
       grits.history.isAncestor("missing-commit", "memory-second"),
-      (error: unknown) => {
-        assert.equal(error instanceof GritsError, true);
-        assert.equal((error as GritsError).code, "NOT_FOUND");
-        assert.equal((error as GritsError).operation, "history.isAncestor");
-        return true;
-      },
+      (error: Error) => matchesGritsError(error, "NOT_FOUND", "history.isAncestor"),
     );
 
     for (const descendantId of ["memory-missing-parent", "memory-non-commit-parent"]) {
       await assert.rejects(
         grits.history.isAncestor("memory-first", descendantId),
-        (error: unknown) => {
-          assert.equal(error instanceof GritsError, true);
-          assert.equal((error as GritsError).code, "NOT_FOUND");
-          assert.equal((error as GritsError).operation, "history.isAncestor");
-          return true;
-        },
+        (error: Error) => matchesGritsError(error, "NOT_FOUND", "history.isAncestor"),
       );
     }
   });
@@ -128,7 +124,6 @@ describe("history.isAncestor", () => {
       });
 
       const publicResult = await grits.history.isAncestor(fixture.first, fixture.second);
-      assert.equal(typeof publicResult, "boolean");
       assert.equal(publicResult, true);
       assert.equal(
         await grits.history.isAncestor(fixture.second, fixture.first),
@@ -140,12 +135,7 @@ describe("history.isAncestor", () => {
       );
       await assert.rejects(
         grits.history.isAncestor("HEAD", fixture.second),
-        (error: unknown) => {
-          assert.equal(error instanceof GritsError, true);
-          assert.equal((error as GritsError).code, "NOT_FOUND");
-          assert.equal((error as GritsError).operation, "history.isAncestor");
-          return true;
-        },
+        (error: Error) => matchesGritsError(error, "NOT_FOUND", "history.isAncestor"),
       );
     } finally {
       rmSync(fixture.path, { recursive: true, force: true });

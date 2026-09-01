@@ -3,6 +3,7 @@ import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isRuntimeNumber, isRuntimeString } from "../../src/internal/runtime-type.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -10,7 +11,12 @@ function stripAnsi(value: string): string {
   return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
 }
 
-function runHarness(args: readonly string[]): { status: number; stdout: string } {
+type HarnessRun = {
+  status: number;
+  stdout: string;
+};
+
+function runHarness(args: readonly string[]): HarnessRun {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   delete env.NODE_CHANNEL_FD;
@@ -23,8 +29,15 @@ function runHarness(args: readonly string[]): { status: number; stdout: string }
     });
     return { status: 0, stdout };
   } catch (error) {
-    const err = error as { status?: number; stdout?: string };
-    return { status: err.status ?? 1, stdout: err.stdout ?? "" };
+    const status =
+      error instanceof Error && "status" in error && isRuntimeNumber(error.status)
+        ? error.status
+        : 1;
+    const stdout =
+      error instanceof Error && "stdout" in error && isRuntimeString(error.stdout)
+        ? error.stdout
+        : "";
+    return { status, stdout };
   }
 }
 
