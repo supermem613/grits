@@ -127,7 +127,7 @@ describe("bootstrap family goldens", () => {
         () =>
           invokePalSlot("bootstrap.clone", {
             repositoryPath,
-            path: "https://example.test/grits.git",
+            path: "ssh://example.test/grits.git",
             dest: join(tmpdir(), "grits-bootstrap-remote-clone"),
           }),
         (error: Error & { code?: string }) =>

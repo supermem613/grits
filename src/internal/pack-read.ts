@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createInflate, inflateSync } from "node:zlib";
+import { crc32, createInflate, inflateSync } from "node:zlib";
 import { GritsError } from "../api/errors.js";
-import type { GitObject } from "./git-object.js";
+import { hashObject, type GitObject } from "./git-object.js";
 import { gitDir } from "./resolve-head.js";
 
 const IDX_V2_MAGIC = Buffer.from([0xff, 0x74, 0x4f, 0x63]);
@@ -75,6 +76,24 @@ function inflateStream(input: Buffer): Promise<Buffer> {
     inflator.on("error", reject);
     inflator.on("end", () => resolve(Buffer.concat(chunks)));
     inflator.end(input);
+  });
+}
+
+function inflateConsumed(pack: Buffer, start: number): Promise<{ payload: Buffer; next: number }> {
+  const inflator = createInflate();
+  const chunks: Buffer[] = [];
+  return new Promise((resolve, reject) => {
+    inflator.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    inflator.on("error", reject);
+    inflator.on("end", () => {
+      resolve({
+        payload: Buffer.concat(chunks),
+        next: start + inflator.bytesWritten,
+      });
+    });
+    inflator.end(pack.subarray(start));
   });
 }
 
@@ -386,4 +405,156 @@ export async function readPackedObject(
     return readAtOffset(repositoryPath, index, pack, offset, new Set(seen));
   }
   return null;
+}
+
+type IndexedObject = {
+  id: string;
+  offset: number;
+  crc: number;
+};
+
+// Git pack files end with a 20-byte SHA-1 of every preceding byte.
+const PACK_SHA1_TRAILER_BYTES = 20;
+
+async function scanPack(pack: Buffer): Promise<IndexedObject[]> {
+  if (pack.subarray(0, 4).toString("ascii") !== "PACK") {
+    throw new Error("Invalid pack header.");
+  }
+  const version = readUInt32(pack, 4);
+  if (version !== 2) {
+    throw nyI(`NYI: pack version ${version} is not read.`);
+  }
+  if (pack.length < 12 + PACK_SHA1_TRAILER_BYTES) {
+    throw new Error("Pack is shorter than the Git header plus SHA-1 trailer.");
+  }
+  const trailer = pack.subarray(pack.length - PACK_SHA1_TRAILER_BYTES);
+  const digest = createHash("sha1")
+    .update(pack.subarray(0, pack.length - PACK_SHA1_TRAILER_BYTES))
+    .digest();
+  if (!trailer.equals(digest)) {
+    throw new Error("Pack SHA-1 trailer does not match.");
+  }
+
+  const count = readUInt32(pack, 8);
+  const resolved = new Map<number, GitObject>();
+  const byId = new Map<string, GitObject>();
+  const indexed: IndexedObject[] = [];
+  let offset = 12;
+  for (let i = 0; i < count; i += 1) {
+    const start = offset;
+    const header = decodeSize(pack, start);
+    let pos = header.pos;
+    let object: GitObject;
+    if (header.type === OBJ_OFS_DELTA) {
+      const ofs = decodeOfsDelta(pack, pos);
+      const inflated = await inflateConsumed(pack, ofs.pos);
+      pos = inflated.next;
+      const base = resolved.get(start - ofs.baseDistance);
+      if (base === undefined) {
+        throw nyI("NYI: packed ofs-delta base is not present in this pack.");
+      }
+      object = { type: base.type, payload: applyDelta(base.payload, inflated.payload) };
+    } else if (header.type === OBJ_REF_DELTA) {
+      const baseId = pack.subarray(pos, pos + 20).toString("hex");
+      const inflated = await inflateConsumed(pack, pos + 20);
+      pos = inflated.next;
+      const base = byId.get(baseId);
+      if (base === undefined) {
+        throw nyI(`NYI: packed delta base ${baseId} is not present as a loose or packed object.`);
+      }
+      object = { type: base.type, payload: applyDelta(base.payload, inflated.payload) };
+    } else {
+      const type = packedTypeName(header.type);
+      if (type === undefined) {
+        throw new Error(`Unknown packed object type ${header.type}.`);
+      }
+      const inflated = await inflateConsumed(pack, pos);
+      pos = inflated.next;
+      if (inflated.payload.length !== header.size) {
+        throw new Error(`Packed ${type} size ${inflated.payload.length} does not match header ${header.size}.`);
+      }
+      object = { type, payload: inflated.payload };
+    }
+    const id = hashObject(object.type, object.payload);
+    resolved.set(start, object);
+    byId.set(id, object);
+    indexed.push({
+      id,
+      offset: start,
+      crc: crc32(pack.subarray(start, pos)),
+    });
+    offset = pos;
+  }
+  if (offset !== pack.length - PACK_SHA1_TRAILER_BYTES) {
+    throw new Error("Pack object stream does not end at the SHA-1 trailer.");
+  }
+  return indexed;
+}
+
+function serializeIdxV2(objects: IndexedObject[], packChecksum: Buffer): Buffer {
+  const sorted = [...objects].sort((left, right) => {
+    if (left.id < right.id) {
+      return -1;
+    }
+    if (left.id > right.id) {
+      return 1;
+    }
+    return 0;
+  });
+  const count = sorted.length;
+  const fanout = Buffer.alloc(256 * 4);
+  let seen = 0;
+  for (let first = 0; first < 256; first += 1) {
+    while (seen < count && Number.parseInt(sorted[seen].id.slice(0, 2), 16) <= first) {
+      seen += 1;
+    }
+    fanout.writeUInt32BE(seen, first * 4);
+  }
+  const names = Buffer.alloc(count * 20);
+  const crcs = Buffer.alloc(count * 4);
+  const off32 = Buffer.alloc(count * 4);
+  const largeOffsets: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    Buffer.from(sorted[i].id, "hex").copy(names, i * 20);
+    crcs.writeUInt32BE(sorted[i].crc >>> 0, i * 4);
+    const offset = sorted[i].offset;
+    if (offset >= 0x80000000) {
+      off32.writeUInt32BE(0x80000000 + largeOffsets.length, i * 4);
+      largeOffsets.push(offset);
+    } else {
+      off32.writeUInt32BE(offset, i * 4);
+    }
+  }
+  const large = Buffer.alloc(largeOffsets.length * 8);
+  for (let i = 0; i < largeOffsets.length; i += 1) {
+    large.writeBigUInt64BE(BigInt(largeOffsets[i]), i * 8);
+  }
+  const body = Buffer.concat([
+    IDX_V2_MAGIC,
+    Buffer.from([0, 0, 0, 2]),
+    fanout,
+    names,
+    crcs,
+    off32,
+    large,
+    packChecksum,
+  ]);
+  return Buffer.concat([body, createHash("sha1").update(body).digest()]);
+}
+
+export async function writePackIndex(packPath: string): Promise<string> {
+  if (!packPath.endsWith(".pack")) {
+    throw new Error("Pack index writer requires a .pack file.");
+  }
+  const idxPath = `${packPath.slice(0, -".pack".length)}.idx`;
+  if (existsSync(idxPath)) {
+    throw new Error(`Pack index writer refuses to overwrite ${idxPath}.`);
+  }
+  const pack = await readFile(packPath);
+  const idx = serializeIdxV2(
+    await scanPack(pack),
+    pack.subarray(pack.length - PACK_SHA1_TRAILER_BYTES),
+  );
+  await writeFile(idxPath, idx, { flag: "wx" });
+  return idxPath;
 }

@@ -8,6 +8,8 @@ export function isRemoteGitUrl(value: string): boolean {
   return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/|file:\/\/)/i.test(value);
 }
 
+export { cloneHttps } from "./smart-http-fetch.js";
+
 export async function copyGitDir(sourceRepo: string, destRepo: string): Promise<void> {
   const sourceGit = gitDir(sourceRepo);
   const destGit = gitDir(destRepo);
