@@ -53,11 +53,44 @@ describe("bootstrap family goldens", () => {
     });
   });
 
-  it("clone stays NYI", async () => {
+  it("clone copies a local repository", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const dest = mkdtempSync(join(tmpdir(), "grits-bootstrap-clone-"));
+      rmSync(dest, { recursive: true, force: true });
+      try {
+        assert.equal(
+          await invokePalSlot("bootstrap.clone", {
+            repositoryPath,
+            path: repositoryPath,
+            dest,
+          }),
+          "",
+        );
+        assert.equal(
+          gitId(dest, ["rev-parse", "HEAD"]),
+          gitId(repositoryPath, ["rev-parse", "HEAD"]),
+        );
+        assert.equal(
+          gitId(dest, ["cat-file", "-p", "HEAD:bootstrap-golden.txt"]),
+          "golden-bootstrap",
+        );
+      } finally {
+        rmSync(dest, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("clone of a remote URL stays NYI", async () => {
     await withOracleRepo(async (repositoryPath) => {
       await assert.rejects(
-        () => invokePalSlot("bootstrap.clone", { repositoryPath }),
-        (error: Error & { code?: string }) => error.code === "NYI",
+        () =>
+          invokePalSlot("bootstrap.clone", {
+            repositoryPath,
+            path: "https://example.test/grits.git",
+            dest: join(tmpdir(), "grits-bootstrap-remote-clone"),
+          }),
+        (error: Error & { code?: string }) =>
+          error.code === "NYI" && error.message.includes("does not clone remote URLs"),
       );
     });
   });

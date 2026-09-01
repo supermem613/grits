@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -99,21 +99,89 @@ describe("worktree family goldens", () => {
     });
   });
 
-  for (const slotId of [
-    "worktree.addDetach",
-    "worktree.addNoCheckout",
-    "worktree.sparseCheckoutInitCone",
-    "worktree.sparseCheckoutSet",
-    "worktree.removeForce",
-    "worktree.move",
-  ] as const) {
-    it(`${slotId} stays NYI`, async () => {
-      await withOracleRepo(async (repositoryPath) => {
-        await assert.rejects(
-          () => invokePalSlot(slotId, { repositoryPath }),
-          (error: Error & { code?: string }) => error.code === "NYI",
+  it("addDetach creates a detached linked worktree", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const dest = mkdtempSync(join(tmpdir(), "grits-wt-add-"));
+      rmSync(dest, { recursive: true, force: true });
+      try {
+        assert.equal(
+          await invokePalSlot("worktree.addDetach", {
+            repositoryPath,
+            dest,
+            target: "HEAD",
+          }),
+          "",
         );
-      });
+        assert.equal(readFileSync(join(dest, "worktree-golden.txt"), "utf8"), "golden-worktree\n");
+        assert.equal(gitId(dest, ["rev-parse", "--abbrev-ref", "HEAD"]), "HEAD");
+        const listed = git(repositoryPath, ["worktree", "list"]).replaceAll("\\", "/");
+        assert.equal(listed.includes(dest.replaceAll("\\", "/")), true);
+      } finally {
+        rmSync(dest, { recursive: true, force: true });
+      }
     });
-  }
+  });
+
+  it("addNoCheckout does not write worktree files", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const dest = mkdtempSync(join(tmpdir(), "grits-wt-nc-"));
+      rmSync(dest, { recursive: true, force: true });
+      try {
+        await invokePalSlot("worktree.addNoCheckout", { repositoryPath, dest, target: "HEAD" });
+        assert.equal(existsSync(join(dest, "worktree-golden.txt")), false);
+        assert.equal(existsSync(join(dest, ".git")), true);
+      } finally {
+        rmSync(dest, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("move then removeForce updates and deletes the linked worktree", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const dest = mkdtempSync(join(tmpdir(), "grits-wt-mv-"));
+      const moved = `${dest}-moved`;
+      rmSync(dest, { recursive: true, force: true });
+      try {
+        await invokePalSlot("worktree.addDetach", { repositoryPath, dest, target: "HEAD" });
+        await invokePalSlot("worktree.move", { repositoryPath, path: dest, dest: moved });
+        assert.equal(existsSync(join(moved, "worktree-golden.txt")), true);
+        await invokePalSlot("worktree.removeForce", { repositoryPath, dest: moved });
+        assert.equal(existsSync(moved), false);
+      } finally {
+        rmSync(dest, { recursive: true, force: true });
+        rmSync(moved, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("prune drops admin for a deleted worktree directory", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const dest = mkdtempSync(join(tmpdir(), "grits-wt-prune-"));
+      rmSync(dest, { recursive: true, force: true });
+      await invokePalSlot("worktree.addDetach", { repositoryPath, dest, target: "HEAD" });
+      rmSync(dest, { recursive: true, force: true });
+      assert.equal(await invokePalSlot("worktree.prune", { repositoryPath }), "");
+      const listed = git(repositoryPath, ["worktree", "list"]);
+      assert.equal(listed.includes("grits-wt-prune-"), false);
+    });
+  });
+
+  it("sparseCheckoutSet keeps cone paths and root files", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      mkdirSync(join(repositoryPath, "keep"), { recursive: true });
+      mkdirSync(join(repositoryPath, "drop"), { recursive: true });
+      writeFileSync(join(repositoryPath, "keep", "in.txt"), "in\n", "utf8");
+      writeFileSync(join(repositoryPath, "drop", "out.txt"), "out\n", "utf8");
+      gitId(repositoryPath, ["add", "."]);
+      gitId(repositoryPath, ["commit", "-m", "sparse-paths"]);
+      await invokePalSlot("worktree.sparseCheckoutInitCone", { repositoryPath });
+      await invokePalSlot("worktree.sparseCheckoutSet", {
+        repositoryPath,
+        paths: ["keep"],
+      });
+      assert.equal(existsSync(join(repositoryPath, "worktree-golden.txt")), true);
+      assert.equal(existsSync(join(repositoryPath, "keep", "in.txt")), true);
+      assert.equal(existsSync(join(repositoryPath, "drop", "out.txt")), false);
+    });
+  });
 });

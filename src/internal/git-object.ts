@@ -201,3 +201,21 @@ export async function firstParentId(repositoryPath: string): Promise<string> {
   }
   return commit.parents[0];
 }
+
+export async function flattenTree(
+  repositoryPath: string,
+  treeId: string,
+  prefix = "",
+): Promise<TreeEntry[]> {
+  const entries = await readTreeEntries(repositoryPath, treeId);
+  const files: TreeEntry[] = [];
+  for (const entry of entries) {
+    const name = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.mode === "40000" || entry.mode === "040000") {
+      files.push(...(await flattenTree(repositoryPath, entry.id, name)));
+    } else {
+      files.push({ mode: entry.mode, name, id: entry.id });
+    }
+  }
+  return files;
+}

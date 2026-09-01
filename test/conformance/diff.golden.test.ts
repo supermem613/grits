@@ -84,18 +84,35 @@ describe("diff family goldens", () => {
     });
   });
 
-  it("noIndex reports a mismatch between two worktree files", async () => {
+  it("unmergedNames lists unique unmerged paths", async () => {
+    await withOracleRepo(async (repositoryPath, firstId, _secondId) => {
+      const baseBlob = gitId(repositoryPath, ["rev-parse", `${firstId}:diff-golden.txt`]);
+      const oursBlob = gitId(repositoryPath, ["hash-object", "-w", "--stdin"], "ours\n");
+      const theirsBlob = gitId(repositoryPath, ["hash-object", "-w", "--stdin"], "theirs\n");
+      git(repositoryPath, ["update-index", "--index-info"], `100644 ${baseBlob} 1\tdiff-golden.txt\n100644 ${oursBlob} 2\tdiff-golden.txt\n100644 ${theirsBlob} 3\tdiff-golden.txt\n`);
+      assert.equal(
+        await invokePalSlot("diff.unmergedNames", { repositoryPath }),
+        git(repositoryPath, ["diff", "--name-only", "--diff-filter=U"]),
+      );
+    });
+  });
+
+  it("noIndex matches git unified diff", async () => {
     await withOracleRepo(async (repositoryPath) => {
       writeFileSync(join(repositoryPath, "left.txt"), "left\n", "utf8");
       writeFileSync(join(repositoryPath, "right.txt"), "right\n", "utf8");
-      assert.equal(
-        await invokePalSlot("diff.noIndex", {
-          repositoryPath,
-          path: "left.txt",
-          dest: "right.txt",
-        }),
-        "M\tleft.txt\n",
-      );
+      const actual = await invokePalSlot("diff.noIndex", {
+        repositoryPath,
+        path: "left.txt",
+        dest: "right.txt",
+      });
+      let expected = "";
+      try {
+        expected = git(repositoryPath, ["-c", "core.abbrev=7", "diff", "--no-index", "--no-color", "left.txt", "right.txt"]);
+      } catch (error) {
+        expected = (error as { stdout?: string }).stdout ?? "";
+      }
+      assert.equal(actual, expected);
     });
   });
 

@@ -8,6 +8,7 @@ export type IndexEntry = {
   size: number;
   id: string;
   name: string;
+  stage: number;
 };
 
 export async function readIndex(repositoryPath: string): Promise<IndexEntry[]> {
@@ -24,17 +25,25 @@ export async function readIndex(repositoryPath: string): Promise<IndexEntry[]> {
     const id = buf.subarray(offset + 40, offset + 60).toString("hex");
     const flags = buf.readUInt16BE(offset + 60);
     const nameLength = flags & 0xfff;
+    const stage = (flags >> 12) & 3;
     const name = buf.subarray(offset + 62, offset + 62 + nameLength).toString("utf8");
     const entryLength = 62 + nameLength;
     const padding = (8 - (entryLength % 8)) % 8;
     offset += entryLength + padding;
-    entries.push({ mode, size, id, name });
+    entries.push({ mode, size, id, name, stage });
   }
   return entries;
 }
 
 export async function writeIndex(
   repositoryPath: string,
+  entries: readonly IndexEntry[],
+): Promise<void> {
+  await writeIndexFile(join(gitDir(repositoryPath), "index"), entries);
+}
+
+export async function writeIndexFile(
+  indexPath: string,
   entries: readonly IndexEntry[],
 ): Promise<void> {
   const sorted = [...entries].sort((left, right) => {
@@ -44,7 +53,7 @@ export async function writeIndex(
     if (left.name > right.name) {
       return 1;
     }
-    return 0;
+    return (left.stage ?? 0) - (right.stage ?? 0);
   });
   const parts: Buffer[] = [];
   const header = Buffer.alloc(12);
@@ -60,11 +69,12 @@ export async function writeIndex(
     buf.writeUInt32BE(entry.mode, 24);
     buf.writeUInt32BE(entry.size, 36);
     Buffer.from(entry.id, "hex").copy(buf, 40);
-    buf.writeUInt16BE(Math.min(name.length, 0xfff), 60);
+    const stage = entry.stage ?? 0;
+    buf.writeUInt16BE(((stage & 3) << 12) | Math.min(name.length, 0xfff), 60);
     name.copy(buf, 62);
     parts.push(buf);
   }
   const body = Buffer.concat(parts);
   const digest = createHash("sha1").update(body).digest();
-  await writeFile(join(gitDir(repositoryPath), "index"), Buffer.concat([body, digest]));
+  await writeFile(indexPath, Buffer.concat([body, digest]));
 }

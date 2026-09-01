@@ -174,4 +174,28 @@ describe("index family goldens", () => {
       );
     });
   });
+
+  it("checkout writes blob byte lengths into the index", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      await invokePalSlot("worktree.checkout", { repositoryPath, target: "HEAD" });
+      const debug = git(repositoryPath, ["ls-files", "--debug"]);
+      assert.match(debug, /size: 13\t/);
+      assert.equal(gitId(repositoryPath, ["hash-object", "index-golden.txt"]).length, 40);
+    });
+  });
+
+  it("writeTree rejects an unmerged index", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const blob = gitId(repositoryPath, ["hash-object", "-w", "--stdin"], "stage\n");
+      git(
+        repositoryPath,
+        ["update-index", "--index-info"],
+        `100644 ${blob} 1\tindex-golden.txt\n100644 ${blob} 2\tindex-golden.txt\n100644 ${blob} 3\tindex-golden.txt\n`,
+      );
+      await assert.rejects(
+        () => invokePalSlot("index.writeTree", { repositoryPath }),
+        (error: Error & { code?: string }) => error.code === "INVALID_CONFIG",
+      );
+    });
+  });
 });

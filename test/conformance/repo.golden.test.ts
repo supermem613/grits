@@ -53,10 +53,38 @@ describe("repo family goldens", () => {
     });
   });
 
-  it("clone stays NYI", async () => {
+  it("clone copies a local repository", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const dest = mkdtempSync(join(tmpdir(), "grits-repo-clone-"));
+      rmSync(dest, { recursive: true, force: true });
+      try {
+        assert.equal(
+          await invokePalSlot("repo.clone", {
+            repositoryPath,
+            path: repositoryPath,
+            dest,
+          }),
+          "",
+        );
+        assert.equal(
+          gitId(dest, ["rev-parse", "HEAD"]),
+          gitId(repositoryPath, ["rev-parse", "HEAD"]),
+        );
+      } finally {
+        rmSync(dest, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("clone of a remote URL stays NYI", async () => {
     await withOracleRepo(async (repositoryPath) => {
       await assert.rejects(
-        () => invokePalSlot("repo.clone", { repositoryPath }),
+        () =>
+          invokePalSlot("repo.clone", {
+            repositoryPath,
+            path: "git@example.test:grits.git",
+            dest: join(tmpdir(), "grits-repo-remote-clone"),
+          }),
         (error: Error & { code?: string }) => error.code === "NYI",
       );
     });

@@ -1,10 +1,12 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { GritsError } from "../api/errors.js";
 import { blamePorcelain } from "./blame-porcelain.js";
+import { copyGitDir, requireLocalCloneSource } from "./clone-local.js";
 import { configGet, originUrl } from "./git-config.js";
 import {
+  flattenTree,
   headTreeId,
   readCommit,
   readLooseObject,
@@ -14,6 +16,17 @@ import {
   type TreeEntry,
 } from "./git-object.js";
 import { readIndex, writeIndex } from "./git-index.js";
+import { rebaseAbort, rebaseOnto } from "./rebase-onto.js";
+import { unifiedDiff } from "./unified-diff.js";
+import {
+  addWorktree,
+  coneAllows,
+  moveWorktree,
+  pruneWorktrees,
+  removeWorktree,
+  sparseCheckoutInitCone,
+  sparseCheckoutSet,
+} from "./worktree-admin.js";
 import { hashBlob } from "./hash-blob.js";
 import { writeLooseBlob } from "./loose-object.js";
 import {
@@ -178,7 +191,7 @@ export async function runPalSlot(slotId: string, context: PalSlotContext): Promi
     case "diff.noIndex":
       return diffNoIndex(slotId, context);
     case "diff.unmergedNames":
-      return "";
+      return unmergedNames(requireRepo(slotId, context));
     case "diff.cachedQuiet":
       return diffCachedQuiet(requireRepo(slotId, context), context.path);
     case "diff.configShowOrigin":
@@ -191,7 +204,33 @@ export async function runPalSlot(slotId: string, context: PalSlotContext): Promi
     case "worktree.checkoutPath":
       return checkoutPath(requireRepo(slotId, context), context.rev ?? "HEAD", requirePath(slotId, context));
     case "worktree.prune":
-      return "";
+      return pruneWorktrees(requireRepo(slotId, context));
+    case "worktree.addDetach":
+      return addWorktree(
+        requireRepo(slotId, context),
+        requireDest(slotId, context),
+        context.target ?? context.rev ?? "HEAD",
+        true,
+      );
+    case "worktree.addNoCheckout":
+      return addWorktree(
+        requireRepo(slotId, context),
+        requireDest(slotId, context),
+        context.target ?? context.rev ?? "HEAD",
+        false,
+      );
+    case "worktree.removeForce":
+      return removeWorktree(requireRepo(slotId, context), requireDest(slotId, context));
+    case "worktree.move":
+      return moveWorktree(
+        requireRepo(slotId, context),
+        requirePath(slotId, context),
+        requireDest(slotId, context),
+      );
+    case "worktree.sparseCheckoutInitCone":
+      return sparseCheckoutInitCone(requireRepo(slotId, context));
+    case "worktree.sparseCheckoutSet":
+      return sparseCheckoutSetAndReset(slotId, context);
     case "blame.porcelain":
       return blamePorcelain(requireRepo(slotId, context), context.path);
     case "blame.revPath":
@@ -206,14 +245,16 @@ export async function runPalSlot(slotId: string, context: PalSlotContext): Promi
       return resolveHead(requireRepo(slotId, context));
     case "bootstrap.clone":
     case "repo.clone":
-    case "worktree.addDetach":
-    case "worktree.addNoCheckout":
-    case "worktree.sparseCheckoutInitCone":
-    case "worktree.sparseCheckoutSet":
-    case "worktree.removeForce":
-    case "worktree.move":
+      return cloneRepository(slotId, context);
     case "merge.rebaseOnto":
+      return rebaseOnto(
+        requireRepo(slotId, context),
+        context.target ?? context.rev ?? "HEAD",
+        context.otherRev ?? "HEAD^",
+        context.name ?? "HEAD",
+      );
     case "merge.rebaseAbort":
+      return rebaseAbort(requireRepo(slotId, context));
     case "remote.fetchUpstream":
     case "remote.pushFf":
     case "remote.pushForceWithLease":
@@ -245,6 +286,13 @@ function requirePath(slotId: string, context: PalSlotContext): string {
     throw new GritsError("INVALID_CONFIG", "invokePalSlot requires path.", slotId);
   }
   return context.path;
+}
+
+function requireDest(slotId: string, context: PalSlotContext): string {
+  if (typeof context.dest !== "string" || context.dest.length === 0) {
+    throw new GritsError("INVALID_CONFIG", "invokePalSlot requires dest.", slotId);
+  }
+  return context.dest;
 }
 
 async function hashObjectSlot(slotId: string, context: PalSlotContext): Promise<string> {
@@ -355,6 +403,9 @@ async function fastForwardCheckout(repositoryPath: string, target: string): Prom
 
 async function writeTreeFromIndex(repositoryPath: string): Promise<string> {
   const entries = await readIndex(repositoryPath);
+  if (entries.some((entry) => entry.stage !== 0)) {
+    throw new GritsError("INVALID_CONFIG", "Index has unmerged entries.", "index.writeTree");
+  }
   return writeNestedTree(
     repositoryPath,
     entries.map((entry) => ({
@@ -394,34 +445,19 @@ async function readTreeIntoIndex(repositoryPath: string, rev: string): Promise<s
   const commitId = await resolveRevision(repositoryPath, rev);
   const commit = await readCommit(repositoryPath, commitId);
   const files = await flattenTree(repositoryPath, commit.tree, "");
-  await writeIndex(
-    repositoryPath,
-    files.map((file) => ({
+  const indexEntries = [];
+  for (const file of files) {
+    const object = await readLooseObject(repositoryPath, file.id);
+    indexEntries.push({
       mode: Number.parseInt(file.mode, 8),
-      size: 0,
+      size: object.payload.byteLength,
       id: file.id,
       name: file.name,
-    })),
-  );
-  return commit.tree;
-}
-
-async function flattenTree(
-  repositoryPath: string,
-  treeId: string,
-  prefix: string,
-): Promise<TreeEntry[]> {
-  const entries = await readTreeEntries(repositoryPath, treeId);
-  const files: TreeEntry[] = [];
-  for (const entry of entries) {
-    const name = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
-    if (entry.mode === "40000") {
-      files.push(...(await flattenTree(repositoryPath, entry.id, name)));
-    } else {
-      files.push({ mode: entry.mode, name, id: entry.id });
-    }
+      stage: 0,
+    });
   }
-  return files;
+  await writeIndex(repositoryPath, indexEntries);
+  return commit.tree;
 }
 
 async function removeFromIndex(repositoryPath: string, path: string): Promise<string> {
@@ -453,22 +489,33 @@ async function updateIndexInfo(slotId: string, context: PalSlotContext): Promise
     if (line.trim().length === 0) {
       continue;
     }
-    const match = /^(\d+) ([0-9a-f]{40})\t(.+)$/i.exec(line);
+    const match = /^(\d+) ([0-9a-f]{40})(?: ([0-3]))?\t(.+)$/i.exec(line);
     if (match === null) {
       continue;
     }
-    const name = match[3];
-    const next = entries.filter((entry) => entry.name !== name);
+    const stage = match[3] === undefined ? 0 : Number.parseInt(match[3], 10);
+    const name = match[4];
+    const next = entries.filter((entry) => entry.name !== name || entry.stage !== stage);
+    let size = 0;
+    try {
+      size = (await readLooseObject(repositoryPath, match[2].toLowerCase())).payload.byteLength;
+    } catch {
+      size = 0;
+    }
     next.push({
       mode: Number.parseInt(match[1], 8),
-      size: 0,
+      size,
       id: match[2].toLowerCase(),
       name,
+      stage,
     });
     entries.length = 0;
     entries.push(...next);
   }
   await writeIndex(repositoryPath, entries);
+  if (entries.some((entry) => entry.stage !== 0)) {
+    return "";
+  }
   return writeTreeFromIndex(repositoryPath);
 }
 
@@ -729,10 +776,18 @@ async function diffNoIndex(slotId: string, context: PalSlotContext): Promise<str
   const right = context.dest ?? context.otherRev ?? "right.txt";
   const leftBytes = await readFile(join(repositoryPath, left));
   const rightBytes = await readFile(join(repositoryPath, right));
-  if (Buffer.compare(leftBytes, rightBytes) === 0) {
-    return "";
-  }
-  return `M\t${left}\n`;
+  return unifiedDiff(left, right, leftBytes, rightBytes);
+}
+
+async function unmergedNames(repositoryPath: string): Promise<string> {
+  const names = [
+    ...new Set(
+      (await readIndex(repositoryPath))
+        .filter((entry) => entry.stage !== 0)
+        .map((entry) => entry.name),
+    ),
+  ].sort();
+  return names.length === 0 ? "" : `${names.join("\n")}\n`;
 }
 
 async function diffCachedQuiet(repositoryPath: string, path?: string): Promise<string> {
@@ -776,31 +831,61 @@ async function checkout(repositoryPath: string, target: string, detach: boolean)
   const dest = await resolveRevision(repositoryPath, target);
   const commit = await readCommit(repositoryPath, dest);
   const files = await flattenTree(repositoryPath, commit.tree, "");
+  const indexEntries = [];
   for (const file of files) {
     const object = await readLooseObject(repositoryPath, file.id);
     const filePath = join(repositoryPath, file.name);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, object.payload);
+    indexEntries.push({
+      mode: Number.parseInt(file.mode, 8),
+      size: object.payload.byteLength,
+      id: file.id,
+      name: file.name,
+      stage: 0,
+    });
   }
   if (detach) {
     await updateRefNoDeref(repositoryPath, "HEAD", dest);
   } else {
     await updateRef(repositoryPath, "HEAD", dest);
   }
-  await writeIndex(
-    repositoryPath,
-    files.map((file) => ({
-      mode: Number.parseInt(file.mode, 8),
-      size: objectSize(file),
-      id: file.id,
-      name: file.name,
-    })),
-  );
+  await writeIndex(repositoryPath, indexEntries);
   return "";
 }
 
-function objectSize(_file: TreeEntry): number {
-  return 0;
+async function sparseCheckoutSetAndReset(slotId: string, context: PalSlotContext): Promise<string> {
+  const repositoryPath = requireRepo(slotId, context);
+  const prefixes = context.paths ?? (context.path === undefined ? [] : [context.path]);
+  await sparseCheckoutSet(repositoryPath, prefixes);
+  await checkout(repositoryPath, "HEAD", false);
+  const allowed = new Set(
+    (await flattenTree(repositoryPath, (await readCommit(repositoryPath, await resolveHead(repositoryPath))).tree))
+      .filter((file) => coneAllows(file.name, prefixes))
+      .map((file) => file.name),
+  );
+  for (const file of await listWorktreeFiles(repositoryPath)) {
+    if (!allowed.has(file) && file.includes("/")) {
+      await rmWorktreeFile(join(repositoryPath, file));
+    }
+  }
+  return "";
+}
+
+async function rmWorktreeFile(path: string): Promise<void> {
+  await rm(path, { force: true });
+}
+
+async function cloneRepository(slotId: string, context: PalSlotContext): Promise<string> {
+  const source = context.path ?? context.target;
+  const dest = context.dest;
+  if (typeof source !== "string" || source.length === 0 || typeof dest !== "string" || dest.length === 0) {
+    throw new GritsError("INVALID_CONFIG", "clone requires path and dest.", slotId);
+  }
+  requireLocalCloneSource(slotId, source);
+  await mkdir(dest, { recursive: true });
+  await copyGitDir(source, dest);
+  return checkout(dest, "HEAD", false);
 }
 
 async function checkoutPath(repositoryPath: string, rev: string, path: string): Promise<string> {
