@@ -56,13 +56,6 @@ export default defineConfig({
       rules: syntaxBans,
     },
     {
-      files: ["src/cli.ts", "src/commands/**/*.ts"],
-      rules: {
-        "grits-bans/no-console-output": "off",
-        "grits-bans/no-process-stderr-write": "off",
-      },
-    },
-    {
       files: ["test/**/*.ts"],
       rules: {
         "grits-anti-slop/no-mock-call-order": "error",

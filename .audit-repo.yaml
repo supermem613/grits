@@ -1,0 +1,38 @@
+name: grits
+
+source_of_truth:
+  file: src/api/types.ts
+  extractor: regex
+  # Public library operations are the Promise methods on *Api types.
+  pattern: '(\w+)\([^)]*\): Promise'
+  rename:
+    read: objects.read
+    resolve: refs.resolve
+    isAncestor: history.isAncestor
+  sort: source_order
+
+targets:
+  - file: README.md
+    section: { heading: "Library API" }
+    match: code_token
+  - file: docs/soda-pal-surface-map.md
+    section: { heading: "Completed Grits mappings" }
+    match: table_row
+
+exclude_globs:
+  - 'dist/**'
+  - '.sd/**'
+
+stale_terms:
+  - term: helloCommand
+    reason: create-cli template leftover. No hello command ships.
+  - term: 'grits doctor'
+    reason: CLI surface removed. grits is a library only.
+  - term: 'grits schema'
+    reason: CLI surface removed. grits is a library only.
+  - term: 'grits update'
+    reason: CLI surface removed. grits is a library only.
+  - term: src/cli.ts
+    reason: CLI entry removed.
+  - term: src/registry.ts
+    reason: CLI command catalog removed.

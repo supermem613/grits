@@ -18,7 +18,6 @@ test("package declaration exposes the built Grits root", () => {
     import: "./dist/index.js",
   });
   assert.equal(packageJson.types, "./dist/index.d.ts");
-  assert.equal(packageJson.bin?.grits, "./dist/cli.js");
 });
 
 test("package-name import exposes createGrits", () => {
