@@ -1,6 +1,6 @@
 {
-  "name": "grits",
-  "version": "0.1.0",
+  "name": "@supermem613/grits",
+  "version": "0.1.1",
   "description": "TypeScript Git Library",
   "type": "module",
   "exports": {
@@ -10,6 +10,20 @@
     }
   },
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/supermem613/grits.git"
+  },
+  "homepage": "https://github.com/supermem613/grits",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc",
     "test": "node test/run.mjs test/**/*.test.ts",

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git } from "grits";
+import { git } from "@supermem613/grits";
 import { isPlainObject, isRuntimeFunction } from "../../src/internal/runtime-type.js";
 
 const parsedPackage = JSON.parse(

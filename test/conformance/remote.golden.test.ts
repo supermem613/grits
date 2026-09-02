@@ -9,11 +9,19 @@ import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 const ORIGIN_URL = "https://example.test/grits.git";
 const SSH_ORIGIN_URL = "ssh://example.test/grits.git";
 
+const GIT_TEST_IDENTITY = {
+  GIT_AUTHOR_NAME: "Grits Test",
+  GIT_AUTHOR_EMAIL: "grits@example.test",
+  GIT_COMMITTER_NAME: "Grits Test",
+  GIT_COMMITTER_EMAIL: "grits@example.test",
+} as const;
+
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", ["-c", "safe.bareRepository=all", ...args], {
     cwd: repositoryPath,
     encoding: "utf8",
     input: stdin,
+    env: { ...process.env, ...GIT_TEST_IDENTITY },
   });
 }
 
@@ -97,6 +105,22 @@ describe("remote family goldens", () => {
         "",
       );
       assert.equal(gitId(barePath, ["rev-parse", `refs/heads/${branch}`]), localTip);
+    });
+  });
+
+  it("commit after clone uses the helper git identity", async () => {
+    await withBareClone(async (_barePath, localPath) => {
+      const clonePath = mkdtempSync(join(tmpdir(), "grits-remote-clone-ident-"));
+      rmSync(clonePath, { recursive: true, force: true });
+      try {
+        gitId(localPath, ["clone", localPath, clonePath]);
+        writeFileSync(join(clonePath, "clone-ident.txt"), "clone-ident\n", "utf8");
+        gitId(clonePath, ["add", "clone-ident.txt"]);
+        gitId(clonePath, ["commit", "-m", "clone-ident"]);
+        assert.match(gitId(clonePath, ["rev-parse", "HEAD"]), /^[0-9a-f]{40}$/);
+      } finally {
+        rmSync(clonePath, { recursive: true, force: true });
+      }
     });
   });
 

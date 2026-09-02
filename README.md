@@ -5,10 +5,10 @@
 ## Library API
 
 The package root is the public Grits library entry. Import `git` and
-`GritsError` from `grits`:
+`GritsError` from `@supermem613/grits`:
 
 ```ts
-import { git, GritsError } from "grits";
+import { git, GritsError } from "@supermem613/grits";
 ```
 
 Commands are flat and asynchronous. Pass a memory `repository` or a filesystem
@@ -53,7 +53,7 @@ try {
 }
 ```
 
-Import the library from `grits` in application code. There is no CLI.
+Import the library from `@supermem613/grits` in application code. There is no CLI.
 
 ## Support
 
