@@ -1,6 +1,6 @@
 # grits
 
-> Typed Git repository API for filesystem and in-memory repositories.
+> TypeScript Git Library
 
 ## Quick start
 
@@ -81,8 +81,9 @@ or repository-access process failures reject with `GritsError` code
 `REPOSITORY_UNAVAILABLE`.
 
 `UNSUPPORTED_CAPABILITY` is the typed code reserved for future operations that
-are not supported. Check the error's `code` and `operation` fields when
-handling typed failures:
+are not supported. `AUTH` is the typed code when HTTPS Smart HTTP returns HTTP
+401. Grits does not send credentials. Check the error's `code` and `operation`
+fields when handling typed failures:
 
 ```ts
 try {
@@ -95,6 +96,121 @@ try {
 ```
 
 Import the library from `grits` in application code. There is no CLI.
+
+## Support
+
+The public library is three read operations on `createGrits`. The PAL inventory
+below is the internal Soda capability surface. PAL is not a public export.
+
+### Public library
+
+| Operation | Status | Limits |
+| --- | --- | --- |
+| `objects.read` | Supported | Loose objects and pack v2 with idx v2. Pack v1 and other pack versions are NYI. |
+| `refs.resolve` | Supported | Memory repositories read seeded refs only. An unknown ref returns `null`. |
+| `history.isAncestor` | Supported | Filesystem accepts full hexadecimal commit IDs only. `HEAD` and other revision expressions are NYI. |
+
+### PAL inventory
+
+Status is native PAL behavior today, not the old deferred inventory.
+
+| Family | Slot | Status | Limits |
+| --- | --- | --- | --- |
+| objects | `hashObjectStdin` | Supported | Writes a loose blob when a repository path is present. |
+| objects | `hashObjectForPath` | Supported | Hashes and writes the file at `path`. |
+| objects | `hashObjectNoWrite` | Supported | Hashes stdin and does not write. |
+| objects | `hashObjectForPathNoWrite` | Supported | Hashes the file at `path` and does not write. |
+| objects | `hashObjectWriteBatch` | Supported | Writes each path as a loose blob. |
+| objects | `hashObjectWriteBatchAsync` | Supported | Same write batch as the synchronous slot. |
+| objects | `catBlob` | Supported | Public `objects.read`. |
+| objects | `showBlob` | Supported | Public `objects.read`. |
+| objects | `showBlobAsync` | Supported | Public `objects.read`. |
+| refs | `updateRefCas` | Supported | Conditional ref update. |
+| refs | `fastForwardCheckout` | Supported | Fast-forward plus checkout. |
+| refs | `updateRef` | Supported | Updates the named ref. |
+| refs | `updateRefNoDeref` | Supported | Updates the named ref without following symbolic refs. |
+| refs | `remoteBranchesContaining` | Supported | Lists remote branches that contain a commit. |
+| refs | `deleteRef` | Supported | Deletes the named ref. |
+| refs | `tagDelete` | Supported | Deletes `refs/tags/<name>`. |
+| refs | `tagCreate` | Supported | Lightweight tag at HEAD. |
+| refs | `tagAnnotated` | Supported | Annotated tag at HEAD. |
+| refs | `tagList` | Supported | Lists short tag names. |
+| index | `readTree` | Supported | Loads a tree into the index. |
+| index | `updateIndexCacheinfo` | Supported | Index cache-info update. |
+| index | `updateIndexForceRemove` | Supported | Force-removes a path from the index. |
+| index | `updateIndexForceRemovePathspec` | Supported | Force-removes a pathspec from the index. |
+| index | `updateIndexInfo` | Supported | Index info update. |
+| index | `writeTree` | Supported | Writes a tree from the index. |
+| index | `statusPorcelain` | Supported | Porcelain status. |
+| index | `statusFull` | Supported | NUL-delimited status. |
+| index | `statusFullScoped` | Supported | Path-scoped NUL-delimited status. |
+| index | `stagedNames` | Supported | Lists staged names. |
+| index | `statusFullWithIgnored` | Supported | Status including ignored paths. |
+| index | `statusBranch` | Supported | Status with branch header. |
+| index | `statusBranchStream` | Supported | Same as `statusBranch`. |
+| commit | `commitTree` | Supported | Creates a commit from a tree. |
+| commit | `lsTreeNameOnly` | Supported | Tree names only. |
+| commit | `lsTreeNameOnlyZ` | Supported | NUL-delimited tree names. |
+| commit | `lsTreeRecursiveZ` | Supported | Recursive NUL-delimited tree listing. |
+| commit | `lsTreePath` | Supported | Path-scoped tree listing. |
+| commit | `lsTreeInfoZ` | Supported | Detailed NUL-delimited tree listing. |
+| commit | `mktree` | Supported | Creates a tree object. |
+| commit | `show` | Supported | Commit presentation. |
+| commit | `logFormat` | Supported | Subject log for one revision. |
+| commit | `revListParents` | Supported | Parent listing. |
+| commit | `catFileType` | Supported | Object type for a revision. |
+| worktree | `checkout` | Supported | Checks out a revision. |
+| worktree | `checkoutDetach` | Supported | Detached checkout. |
+| worktree | `checkoutPath` | Supported | Path-scoped checkout. |
+| worktree | `resetHard` | Supported | Hard reset to a revision. |
+| worktree | `addDetach` | Supported | Adds a detached worktree. |
+| worktree | `addNoCheckout` | Supported | Registers a worktree without checkout. |
+| worktree | `sparseCheckoutInitCone` | Supported | Initializes cone sparse checkout. |
+| worktree | `sparseCheckoutSet` | Supported | Sets cone patterns and resets the worktree. |
+| worktree | `removeForce` | Supported | Force-removes a worktree. |
+| worktree | `move` | Supported | Moves a worktree. |
+| worktree | `prune` | Supported | Prunes stale worktrees. |
+| history | `revParse` | Supported | Resolves a revision. |
+| history | `resolveCommit` | Supported | Resolves a revision to a commit. |
+| history | `revListCount` | Supported | Counts reachable commits. |
+| history | `countCommits` | Supported | Same as `revListCount`. |
+| history | `isAncestor` | Supported | Public `history.isAncestor`. |
+| history | `firstCommit` | Supported | Root commit on the revision. |
+| history | `lookupBlobAt` | Supported | Blob at path in a revision. |
+| history | `lookupBlobsAtBatch` | Supported | Same lookup as `lookupBlobAt`. |
+| history | `resolveRev` | Supported | Public `refs.resolve`. |
+| history | `splitPathRev` | Supported | Splits `rev:path`. |
+| history | `mergeBase` | Supported | Merge-base of two revisions. |
+| history | `revListObjects` | Supported | Reachable object listing. |
+| history | `objectSizes` | Supported | Reachable object sizes. |
+| merge | `mergeFfOnly` | Supported | Fast-forward merge only. |
+| merge | `rebaseOnto` | Supported | Rebase onto a new base. |
+| merge | `rebaseAbort` | Supported | Aborts an in-progress rebase. |
+| diff | `nameStatusZ` | Supported | NUL-delimited name-status. |
+| diff | `nameStatusZBetween` | Supported | Name-status between two revisions. |
+| diff | `noIndex` | Supported | Untracked file comparison. |
+| diff | `unmergedNames` | Supported | Unmerged index names. |
+| diff | `cachedQuiet` | Supported | Quiet cached diff. |
+| diff | `configShowOrigin` | Supported | Config origin for a key. |
+| blame | `porcelain` | Supported | Porcelain blame. |
+| blame | `revPath` | Supported | Blame for a path. |
+| remote | `originUrl` | Supported | Reads `remote.origin.url`. |
+| remote | `fetchUpstream` | Supported | Local path remotes, `file://`, anonymous HTTPS Smart HTTP (protocol v1 and v2), and anonymous `git://` (TCP 9418, protocol v1). SSH, URL userinfo, `git://user@`, and credential helpers are NYI. HTTPS 401 rejects with `AUTH`. |
+| remote | `pushFf` | Supported | Local path remotes, `file://`, anonymous HTTPS receive-pack (protocol v1), and anonymous `git://` (protocol v1). Protocol v2 push, SSH, URL userinfo, `git://user@`, and credential helpers are NYI. HTTPS 401 rejects with `AUTH`. |
+| remote | `pushForceWithLease` | Partial | Local path remotes and `file://` only. HTTPS, SSH, `git://`, URL userinfo, and credential helpers are NYI. |
+| bootstrap | `init` | Supported | Initializes a repository with `refs/heads/master`. |
+| bootstrap | `clone` | Supported | Local path clone, `file://`, anonymous HTTPS clone (protocol v1 and v2, advertised default branch), and anonymous `git://` clone (protocol v1). SSH, URL userinfo, `git://user@`, and credential helpers are NYI. HTTPS 401 rejects with `AUTH`. |
+| bootstrap | `connect` | Supported | Resolves HEAD. |
+| repo | `init` | Supported | Same as `bootstrap.init`. |
+| repo | `clone` | Supported | Same as `bootstrap.clone`. |
+| repo | `connect` | Supported | Same as `bootstrap.connect`. |
+| system | `selfUpdate` | NYI | Host operation, not a git repository operation. |
+| system | `selfBuild` | NYI | Host operation, not a git repository operation. |
+| system | `launchBrowserWindow` | NYI | Host operation, not a git repository operation. |
+
+Memory repositories do not run PAL remote sync. HTTPS push does not speak
+protocol v2. Thin packs and ofs-delta pack writes are NYI. Grits does not send
+credentials on HTTPS or `git://`.
 
 ## Conventions
 

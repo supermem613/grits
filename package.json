@@ -1,7 +1,7 @@
 {
   "name": "grits",
   "version": "0.1.0",
-  "description": "Typed, backend-independent Git repository API for filesystem and in-memory implementations.",
+  "description": "TypeScript Git Library",
   "type": "module",
   "exports": {
     ".": {
