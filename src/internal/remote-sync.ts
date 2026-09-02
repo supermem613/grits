@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GritsError } from "../api/errors.js";
-import { copyTree, isRemoteGitUrl } from "./clone-local.js";
+import { copyTree, isRemoteGitUrl, toLocalGitPath } from "./clone-local.js";
 import { remoteUrl } from "./git-config.js";
 import { readCommit } from "./git-object.js";
 import { gitDir, resolveHead } from "./resolve-head.js";
@@ -114,7 +114,7 @@ async function requireLocalRemote(
   remoteName: string,
   slotId: string,
 ): Promise<string> {
-  const url = await remoteUrl(repositoryPath, remoteName);
+  const url = toLocalGitPath(await remoteUrl(repositoryPath, remoteName));
   if (isRemoteGitUrl(url)) {
     throw new GritsError("NYI", `NYI: ${slotId} does not use network remotes.`, slotId);
   }

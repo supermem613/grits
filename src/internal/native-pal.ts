@@ -910,9 +910,9 @@ async function cloneRepository(slotId: string, context: PalSlotContext): Promise
     await cloneHttps(dest, source);
     return checkout(dest, "HEAD", false);
   }
-  requireLocalCloneSource(slotId, source);
+  const localSource = requireLocalCloneSource(slotId, source);
   await mkdir(dest, { recursive: true });
-  await copyGitDir(source, dest);
+  await copyGitDir(localSource, dest);
   return checkout(dest, "HEAD", false);
 }
 
