@@ -1,11 +1,19 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { GritsError } from "../api/errors.js";
 import { gitDir, resolveRef } from "./resolve-head.js";
 
 export function isRemoteGitUrl(value: string): boolean {
   return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/|file:\/\/)/i.test(value);
+}
+
+export function toLocalGitPath(value: string): string {
+  if (!/^file:/i.test(value)) {
+    return value;
+  }
+  return fileURLToPath(value);
 }
 
 export { cloneHttps } from "./smart-http-fetch.js";
@@ -72,11 +80,13 @@ export function isGitRepository(path: string): boolean {
   return existsSync(join(path, ".git")) || (existsSync(join(path, "HEAD")) && existsSync(join(path, "objects")));
 }
 
-export function requireLocalCloneSource(slotId: string, source: string): void {
-  if (isRemoteGitUrl(source)) {
+export function requireLocalCloneSource(slotId: string, source: string): string {
+  const localPath = toLocalGitPath(source);
+  if (isRemoteGitUrl(localPath)) {
     throw new GritsError("NYI", `NYI: ${slotId} does not clone remote URLs.`, slotId);
   }
-  if (!existsSync(source) || !isGitRepository(source)) {
-    throw new GritsError("NOT_FOUND", `Clone source ${source} is not a git repository.`, slotId);
+  if (!existsSync(localPath) || !isGitRepository(localPath)) {
+    throw new GritsError("NOT_FOUND", `Clone source ${localPath} is not a git repository.`, slotId);
   }
+  return localPath;
 }
