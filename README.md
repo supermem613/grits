@@ -193,9 +193,6 @@ are not a public export.
 | repo | `init` | Supported | Same as `bootstrap.init`. |
 | repo | `clone` | Supported | Same as `bootstrap.clone`. |
 | repo | `connect` | Supported | Same as `bootstrap.connect`. |
-| system | `selfUpdate` | NYI | Host operation, not a git repository operation. |
-| system | `selfBuild` | NYI | Host operation, not a git repository operation. |
-| system | `launchBrowserWindow` | NYI | Host operation, not a git repository operation. |
 
 Memory repositories do not run remote sync. HTTPS push does not speak protocol
 v2. Thin packs and ofs-delta pack writes are NYI. Grits does not send

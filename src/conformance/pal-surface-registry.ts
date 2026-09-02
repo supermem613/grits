@@ -94,7 +94,6 @@ const PAL_SLOTS_BY_FAMILY = {
   remote: ["originUrl", "fetchUpstream", "pushFf", "pushForceWithLease"],
   bootstrap: ["init", "clone", "connect"],
   repo: ["init", "clone", "connect"],
-  system: ["selfUpdate", "selfBuild", "launchBrowserWindow"],
 } as const;
 
 export const palSlotToCanonicalOperation: Readonly<Record<string, string>> = Object.freeze({

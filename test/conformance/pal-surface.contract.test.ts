@@ -98,9 +98,6 @@ const SODA_PAL_SLOT_IDS = [
   "repo.init",
   "repo.clone",
   "repo.connect",
-  "system.selfUpdate",
-  "system.selfBuild",
-  "system.launchBrowserWindow",
 ] as const;
 
 const SODA_MAPPED_PAL_SLOT_IDS = [
@@ -125,13 +122,13 @@ const SODA_NYI_PAL_SLOT_IDS = SODA_PAL_SLOT_IDS.filter(
 );
 
 describe("PAL surface registry", () => {
-  it("freezes the exact 91/5/86 Soda PAL slot contract", () => {
+  it("freezes the exact 88/5/83 Soda PAL slot contract", () => {
     assert.deepEqual([...palSlotIds], [...SODA_PAL_SLOT_IDS].sort());
     assert.deepEqual([...mappedPalSlotIds], [...SODA_MAPPED_PAL_SLOT_IDS].sort());
     assert.deepEqual([...nyiPalSlotIds], [...SODA_NYI_PAL_SLOT_IDS].sort());
     assert.deepEqual({ ...palSlotToCanonicalOperation }, { ...SODA_SLOT_TO_CANONICAL });
-    assert.equal(palSlotIds.length, 91);
+    assert.equal(palSlotIds.length, 88);
     assert.equal(mappedPalSlotIds.length, 5);
-    assert.equal(nyiPalSlotIds.length, 86);
+    assert.equal(nyiPalSlotIds.length, 83);
   });
 });
