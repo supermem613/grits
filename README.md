@@ -2,15 +2,6 @@
 
 > TypeScript Git Library
 
-## Quick start
-
-```bash
-git clone https://github.com/<you>/grits.git ~/repos/grits
-cd ~/repos/grits
-npm install
-npm run build
-```
-
 ## Library API
 
 The package root is the public Grits library entry. Import `createGrits` and
@@ -42,7 +33,7 @@ without opening the repository. The returned `capabilities` profile is
 readonly and reports the selected repository kind plus the `objects.read`,
 `refs.resolve`, and `history.isAncestor` capability statuses.
 
-The first read slice supports `objects.read` and `refs.resolve` for both
+The public API supports `objects.read` and `refs.resolve` for both
 explicit filesystem and memory repositories. The operations are asynchronous:
 
 ```ts
@@ -64,9 +55,8 @@ commit-ID semantics. A missing or non-commit input rejects with the typed
 `GritsError` code `NOT_FOUND` for the `history.isAncestor` operation. If a
 reachable memory commit has a missing or non-commit parent link, the check also
 fails loudly with that typed error instead of returning a false result.
-Filesystem history ancestry currently accepts only full hexadecimal canonical
-commit IDs; revision expressions such as `HEAD` are not accepted yet, and
-broader revision support plus history mutation operations remain deferred.
+Filesystem history ancestry accepts only full hexadecimal canonical commit IDs.
+Revision expressions such as `HEAD` are NYI. History mutation is NYI.
 
 Memory repositories read only their optional seeded objects and refs. An
 unknown ref resolves to `null`; an unknown object rejects with the typed
@@ -99,8 +89,9 @@ Import the library from `grits` in application code. There is no CLI.
 
 ## Support
 
-The public library is three read operations on `createGrits`. The PAL inventory
-below is the internal Soda capability surface. PAL is not a public export.
+The public library is three read operations on `createGrits`. The table below
+lists additional git operations Grits implements internally. Those operations
+are not a public export.
 
 ### Public library
 
@@ -110,18 +101,16 @@ below is the internal Soda capability surface. PAL is not a public export.
 | `refs.resolve` | Supported | Memory repositories read seeded refs only. An unknown ref returns `null`. |
 | `history.isAncestor` | Supported | Filesystem accepts full hexadecimal commit IDs only. `HEAD` and other revision expressions are NYI. |
 
-### PAL inventory
+### Internal operations
 
-Status is native PAL behavior today, not the old deferred inventory.
-
-| Family | Slot | Status | Limits |
+| Family | Operation | Status | Limits |
 | --- | --- | --- | --- |
 | objects | `hashObjectStdin` | Supported | Writes a loose blob when a repository path is present. |
 | objects | `hashObjectForPath` | Supported | Hashes and writes the file at `path`. |
 | objects | `hashObjectNoWrite` | Supported | Hashes stdin and does not write. |
 | objects | `hashObjectForPathNoWrite` | Supported | Hashes the file at `path` and does not write. |
 | objects | `hashObjectWriteBatch` | Supported | Writes each path as a loose blob. |
-| objects | `hashObjectWriteBatchAsync` | Supported | Same write batch as the synchronous slot. |
+| objects | `hashObjectWriteBatchAsync` | Supported | Same write batch as the synchronous operation. |
 | objects | `catBlob` | Supported | Public `objects.read`. |
 | objects | `showBlob` | Supported | Public `objects.read`. |
 | objects | `showBlobAsync` | Supported | Public `objects.read`. |
@@ -208,8 +197,8 @@ Status is native PAL behavior today, not the old deferred inventory.
 | system | `selfBuild` | NYI | Host operation, not a git repository operation. |
 | system | `launchBrowserWindow` | NYI | Host operation, not a git repository operation. |
 
-Memory repositories do not run PAL remote sync. HTTPS push does not speak
-protocol v2. Thin packs and ofs-delta pack writes are NYI. Grits does not send
+Memory repositories do not run remote sync. HTTPS push does not speak protocol
+v2. Thin packs and ofs-delta pack writes are NYI. Grits does not send
 credentials on HTTPS or `git://`.
 
 ## Conventions
@@ -237,7 +226,7 @@ src/
   index.ts            # Public library entry
   api/                # Public types and errors
   internal/           # Adapters and Git internals
-  conformance/        # PAL surface registry
+  conformance/        # Operation registry
 test/
   run.mjs             # Cross-platform test runner (HOME-sandboxed)
   tsconfig.json       # Test type-check config
