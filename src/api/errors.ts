@@ -3,7 +3,8 @@ export type GritsErrorCode =
   | "UNSUPPORTED_CAPABILITY"
   | "NYI"
   | "NOT_FOUND"
-  | "REPOSITORY_UNAVAILABLE";
+  | "REPOSITORY_UNAVAILABLE"
+  | "AUTH";
 
 export class GritsError extends Error {
   readonly code: GritsErrorCode;

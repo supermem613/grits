@@ -230,7 +230,7 @@ async function lsRefsHttps(url: string, fetchImpl: FetchLike): Promise<LsRemoteR
     ),
   });
   if (response.status === 401) {
-    fail("NYI", "NYI: lsRemoteHttps does not send credentials.");
+    fail("AUTH", "lsRemoteHttps requires authentication.");
   }
   if (response.status !== 200) {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP ls-refs did not return refs.");
@@ -276,7 +276,7 @@ export async function lsRemoteHttps(
     },
   });
   if (response.status === 401) {
-    fail("NYI", "NYI: lsRemoteHttps does not send credentials.");
+    fail("AUTH", "lsRemoteHttps requires authentication.");
   }
   if (response.status !== 200) {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP ls-remote did not return an advertisement.");

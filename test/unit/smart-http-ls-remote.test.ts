@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
+import { GritsError } from "../../src/api/errors.js";
 import {
   advertisedDefaultBranch,
   lsRemoteHttps,
@@ -72,5 +73,53 @@ describe("Smart HTTP v2 ls-remote", () => {
       { name: "refs/heads/main", oid: MAIN_OID },
     ]);
     assert.equal(advertisedDefaultBranch(result), "main");
+  });
+
+  it("maps HTTP 401 to AUTH", async () => {
+    await assert.rejects(
+      () =>
+        lsRemoteHttps("https://example.test/grits.git", async () => {
+          return new Response(null, { status: 401 });
+        }),
+      (error: Error) => {
+        assert.equal(error instanceof GritsError, true);
+        if (!(error instanceof GritsError)) {
+          return false;
+        }
+        // AUTH is the user-chosen public code for HTTP 401. It is not NYI.
+        assert.equal(`${error.code}`, "AUTH");
+        assert.equal(error.operation, "lsRemoteHttps");
+        assert.equal(error.message, "lsRemoteHttps requires authentication.");
+        return true;
+      },
+    );
+  });
+
+  it("maps protocol v2 ls-refs HTTP 401 to AUTH", async () => {
+    await assert.rejects(
+      () =>
+        lsRemoteHttps("https://example.test/grits.git", async (_url, init) => {
+          const method = init?.method ?? "GET";
+          if (method === "GET") {
+            return new Response(v2Advertisement(), {
+              status: 200,
+              headers: {
+                "content-type": "application/x-git-upload-pack-advertisement",
+              },
+            });
+          }
+          return new Response(null, { status: 401 });
+        }),
+      (error: Error) => {
+        assert.equal(error instanceof GritsError, true);
+        if (!(error instanceof GritsError)) {
+          return false;
+        }
+        assert.equal(`${error.code}`, "AUTH");
+        assert.equal(error.operation, "lsRemoteHttps");
+        assert.equal(error.message, "lsRemoteHttps requires authentication.");
+        return true;
+      },
+    );
   });
 });
