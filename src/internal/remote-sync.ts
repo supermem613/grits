@@ -8,11 +8,16 @@ import { readCommit } from "./git-object.js";
 import { gitDir, resolveHead } from "./resolve-head.js";
 import { resolveRevision, updateRef } from "./refs.js";
 import { defaultFetch, type FetchLike } from "./smart-http-ls-remote.js";
+import { fetchGit, pushGit } from "./git-protocol.js";
 import { fetchHttps } from "./smart-http-fetch.js";
 import { pushHttps } from "./smart-http-push.js";
 
 function isHttpsGitUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
+}
+
+function isGitProtocolUrl(url: string): boolean {
+  return /^git:\/\//i.test(url);
 }
 
 export async function fetchUpstream(
@@ -24,6 +29,16 @@ export async function fetchUpstream(
   const url = await remoteUrl(repositoryPath, remoteName);
   if (isHttpsGitUrl(url)) {
     await fetchHttps(repositoryPath, url, fetchImpl);
+    const tip = await resolveRevision(repositoryPath, `refs/remotes/${remoteName}/${branch}`);
+    await writeFile(
+      join(gitDir(repositoryPath), "FETCH_HEAD"),
+      `${tip}\t\tbranch '${branch}' of ${url}\n`,
+      "utf8",
+    );
+    return tip;
+  }
+  if (isGitProtocolUrl(url)) {
+    await fetchGit(repositoryPath, url, remoteName);
     const tip = await resolveRevision(repositoryPath, `refs/remotes/${remoteName}/${branch}`);
     await writeFile(
       join(gitDir(repositoryPath), "FETCH_HEAD"),
@@ -54,6 +69,10 @@ export async function pushFf(
   const url = await remoteUrl(repositoryPath, remoteName);
   if (isHttpsGitUrl(url)) {
     await pushHttps(repositoryPath, url, fetchImpl);
+    return "";
+  }
+  if (isGitProtocolUrl(url)) {
+    await pushGit(repositoryPath, url, branch, sha);
     return "";
   }
   const originPath = await requireLocalRemote(repositoryPath, remoteName, "remote.pushFf");

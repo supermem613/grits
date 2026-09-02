@@ -5,6 +5,7 @@ import { GritsError } from "../api/errors.js";
 import { isNonEmptyString, isRuntimeString } from "./runtime-type.js";
 import { blamePorcelain } from "./blame-porcelain.js";
 import { cloneHttps, copyGitDir, requireLocalCloneSource } from "./clone-local.js";
+import { cloneGit } from "./git-protocol.js";
 import { configGet, originUrl } from "./git-config.js";
 import {
   flattenTree,
@@ -908,6 +909,10 @@ async function cloneRepository(slotId: string, context: PalSlotContext): Promise
   }
   if (/^https?:\/\//i.test(source)) {
     await cloneHttps(dest, source);
+    return checkout(dest, "HEAD", false);
+  }
+  if (/^git:\/\//i.test(source)) {
+    await cloneGit(dest, source);
     return checkout(dest, "HEAD", false);
   }
   const localSource = requireLocalCloneSource(slotId, source);
