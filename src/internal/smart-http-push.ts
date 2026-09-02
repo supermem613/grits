@@ -169,7 +169,7 @@ export async function pushHttps(
     },
   });
   if (advertisement.status === 401) {
-    fail("NYI", "NYI: pushHttps does not send credentials.");
+    fail("AUTH", "pushHttps requires authentication.");
   }
   if (advertisement.status !== 200) {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP push did not return a receive-pack advertisement.");
@@ -203,7 +203,7 @@ export async function pushHttps(
     body: new Uint8Array(body),
   });
   if (response.status === 401) {
-    fail("NYI", "NYI: pushHttps does not send credentials.");
+    fail("AUTH", "pushHttps requires authentication.");
   }
   if (response.status !== 200) {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP push did not return a receive-pack result.");

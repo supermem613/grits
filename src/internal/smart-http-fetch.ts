@@ -167,7 +167,7 @@ export async function fetchHttps(
     body: new Uint8Array(useV2 ? buildFetchV2Body(heads) : buildWantBody(heads)),
   });
   if (response.status === 401) {
-    fail("NYI", "NYI: fetchHttps does not send credentials.");
+    fail("AUTH", "fetchHttps requires authentication.");
   }
   if (response.status !== 200) {
     fail("REPOSITORY_UNAVAILABLE", "Smart HTTP fetch did not return a pack.");

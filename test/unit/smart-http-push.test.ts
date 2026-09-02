@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
+import { GritsError } from "../../src/api/errors.js";
 import { createGrits } from "../../src/index.js";
 import { writePackIndex } from "../../src/internal/pack-read.js";
 import { pushHttps } from "../../src/internal/smart-http-push.js";
@@ -115,6 +116,60 @@ describe("Smart HTTP v1 anonymous push", () => {
           bytes: Array.from(Buffer.from(BLOB_TEXT)),
         });
       });
+    });
+  });
+
+  it("maps receive-pack advertisement HTTP 401 to AUTH", async () => {
+    await withRepo(async (sourcePath) => {
+      await assert.rejects(
+        () =>
+          pushHttps(sourcePath, "https://example.test/grits.git", async () => {
+            return new Response(null, { status: 401 });
+          }),
+        (error: Error) => {
+          assert.equal(error instanceof GritsError, true);
+          if (!(error instanceof GritsError)) {
+            return false;
+          }
+          assert.equal(`${error.code}`, "AUTH");
+          assert.equal(error.operation, "pushHttps");
+          assert.equal(error.message, "pushHttps requires authentication.");
+          return true;
+        },
+      );
+    });
+  });
+
+  it("maps receive-pack result HTTP 401 to AUTH", async () => {
+    await withRepo(async (sourcePath) => {
+      writeFileSync(join(sourcePath, "file.txt"), BLOB_TEXT, "utf8");
+      git(sourcePath, ["add", "file.txt"]);
+      git(sourcePath, ["commit", "-m", "packed-hello"]);
+      await assert.rejects(
+        () =>
+          pushHttps(sourcePath, "https://example.test/grits.git", async (_url, init) => {
+            const method = init?.method ?? "GET";
+            if (method === "GET") {
+              return new Response(advertisement(), {
+                status: 200,
+                headers: {
+                  "content-type": "application/x-git-receive-pack-advertisement",
+                },
+              });
+            }
+            return new Response(null, { status: 401 });
+          }),
+        (error: Error) => {
+          assert.equal(error instanceof GritsError, true);
+          if (!(error instanceof GritsError)) {
+            return false;
+          }
+          assert.equal(`${error.code}`, "AUTH");
+          assert.equal(error.operation, "pushHttps");
+          assert.equal(error.message, "pushHttps requires authentication.");
+          return true;
+        },
+      );
     });
   });
 });

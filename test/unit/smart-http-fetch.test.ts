@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
+import { GritsError } from "../../src/api/errors.js";
 import { createGrits } from "../../src/index.js";
 import { fetchHttps } from "../../src/internal/smart-http-fetch.js";
 
@@ -218,6 +219,37 @@ describe("Smart HTTP v2 anonymous fetch", () => {
           bytes: Array.from(Buffer.from(BLOB_TEXT)),
         });
       });
+    });
+  });
+
+  it("maps fetch pack HTTP 401 to AUTH", async () => {
+    await withRepo(async (destPath) => {
+      const commitId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+      await assert.rejects(
+        () =>
+          fetchHttps(destPath, "https://example.test/grits.git", async (_url, init) => {
+            const method = init?.method ?? "GET";
+            if (method === "GET") {
+              return new Response(advertisement(commitId), {
+                status: 200,
+                headers: {
+                  "content-type": "application/x-git-upload-pack-advertisement",
+                },
+              });
+            }
+            return new Response(null, { status: 401 });
+          }),
+        (error: Error) => {
+          assert.equal(error instanceof GritsError, true);
+          if (!(error instanceof GritsError)) {
+            return false;
+          }
+          assert.equal(`${error.code}`, "AUTH");
+          assert.equal(error.operation, "fetchHttps");
+          assert.equal(error.message, "fetchHttps requires authentication.");
+          return true;
+        },
+      );
     });
   });
 });
