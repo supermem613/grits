@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { headTreeId } from "../../src/internal/git-object.js";
@@ -109,6 +109,30 @@ describe("native oracles", () => {
           await worktreeListPorcelain(repositoryPath),
           git(repositoryPath, ["worktree", "list", "--porcelain"]),
         );
+      },
+    );
+  });
+
+  it("worktreeListPorcelain matches git through a linked path", async () => {
+    await withRepo(
+      "grits-worktree-",
+      (repositoryPath) => {
+        writeFileSync(join(repositoryPath, "worktree-golden.txt"), "golden-worktree\n", "utf8");
+        gitId(repositoryPath, ["add", "worktree-golden.txt"]);
+        gitId(repositoryPath, ["commit", "-m", "golden-worktree"]);
+      },
+      async (repositoryPath) => {
+        const linkParent = mkdtempSync(join(tmpdir(), "grits-worktree-link-"));
+        const link = join(linkParent, "repo");
+        try {
+          symlinkSync(repositoryPath, link, process.platform === "win32" ? "junction" : "dir");
+          assert.equal(
+            await worktreeListPorcelain(link),
+            git(repositoryPath, ["worktree", "list", "--porcelain"]),
+          );
+        } finally {
+          rmSync(linkParent, { recursive: true, force: true });
+        }
       },
     );
   });

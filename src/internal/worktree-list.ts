@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { gitDir, resolveHead } from "./resolve-head.js";
 
@@ -8,7 +7,7 @@ export async function worktreeListPorcelain(
 ): Promise<string> {
   const headText = (await readFile(join(gitDir(repositoryPath), "HEAD"), "utf8")).trim();
   const headId = await resolveHead(repositoryPath);
-  const worktreePath = resolve(repositoryPath).replaceAll("\\", "/");
+  const worktreePath = (await realpath(repositoryPath)).replaceAll("\\", "/");
   const third = headText.toLowerCase().startsWith("ref:")
     ? `branch ${headText.slice(4).trim()}`
     : "detached";
