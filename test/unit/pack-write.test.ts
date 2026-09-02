@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { writePackIndex } from "../../src/internal/pack-read.js";
 import { writePack } from "../../src/internal/pack-write.js";
 
@@ -42,15 +42,10 @@ describe("pack v2 writer", () => {
         const packPath = join(destPackDir, "pack-from-write.pack");
         await writePack(sourcePath, [commitId], packPath);
         await writePackIndex(packPath);
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
       });
     });
   });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
 const MAPPED_OBJECT_SLOTS = [
@@ -151,34 +151,28 @@ describe("objects family goldens", () => {
       await withOracleRepo(async (repositoryPath) => {
         const objectId = gitId(repositoryPath, ["hash-object", "-w", "--stdin"], "golden-blob\n");
         const oracleBytes = git(repositoryPath, ["cat-file", "-p", objectId]);
-        const filesystemGrits = createGrits({
-          repository: { kind: "filesystem", path: repositoryPath },
-        });
-        const filesystemObject = await filesystemGrits.objects.read(objectId);
-        assert.equal(filesystemObject.kind, "blob");
-        if (filesystemObject.kind === "blob") {
-          assert.equal(Buffer.from(filesystemObject.bytes).toString("utf8"), oracleBytes);
-        }
-
-        const memoryGrits = createGrits({
-          repository: {
-            kind: "memory",
-            seed: {
-              objects: [
-                {
-                  kind: "blob",
-                  id: objectId,
-                  bytes: Array.from(Buffer.from("golden-blob\n")),
-                },
-              ],
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath, rev: objectId }),
+          oracleBytes,
+        );
+        assert.equal(
+          await gritsGit.catBlob({
+            repository: {
+              kind: "memory",
+              seed: {
+                objects: [
+                  {
+                    kind: "blob",
+                    id: objectId,
+                    bytes: Array.from(Buffer.from("golden-blob\n")),
+                  },
+                ],
+              },
             },
-          },
-        });
-        const memoryObject = await memoryGrits.objects.read(objectId);
-        assert.equal(memoryObject.kind, "blob");
-        if (memoryObject.kind === "blob") {
-          assert.equal(Buffer.from(memoryObject.bytes).toString("utf8"), oracleBytes);
-        }
+            rev: objectId,
+          }),
+          oracleBytes,
+        );
       });
     });
   }

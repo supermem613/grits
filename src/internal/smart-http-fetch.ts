@@ -154,13 +154,11 @@ export async function fetchHttps(
   const heads = headsToWant(advertised.refs);
   const url = repositoryUrl.replace(/\/+$/, "");
   const useV2 = advertised.protocol === 2;
-  const headers: Record<string, string> = {
-    "content-type": `application/x-${SERVICE}-request`,
-    accept: `application/x-${SERVICE}-result`,
-  };
-  if (useV2) {
-    headers["Git-Protocol"] = "version=2";
-  }
+  const requestContentType = `application/x-${SERVICE}-request`;
+  const accept = `application/x-${SERVICE}-result`;
+  const headers = useV2
+    ? { "content-type": requestContentType, accept, "Git-Protocol": "version=2" }
+    : { "content-type": requestContentType, accept };
   const response = await fetchImpl(`${url}/${SERVICE}`, {
     method: "POST",
     headers,

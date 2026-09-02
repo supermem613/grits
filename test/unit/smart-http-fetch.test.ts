@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { GritsError } from "../../src/api/errors.js";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { fetchHttps } from "../../src/internal/smart-http-fetch.js";
+import { nodeHttpBody } from "../helpers/node-http-body.js";
 
 const BLOB_TEXT = "packed-hello\n";
 
@@ -78,7 +79,7 @@ describe("Smart HTTP v1 anonymous fetch", () => {
         await fetchHttps(destPath, "https://example.test/grits.git", async (url, init) => {
           const method = init?.method ?? "GET";
           if (method === "GET") {
-            return new Response(advertisement(commitId), {
+            return new Response(nodeHttpBody(advertisement(commitId)), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-upload-pack-advertisement",
@@ -86,7 +87,7 @@ describe("Smart HTTP v1 anonymous fetch", () => {
             });
           }
           posts.push(Buffer.from(init?.body ?? "").toString("utf8"));
-          return new Response(uploadPackResult(pack), {
+          return new Response(nodeHttpBody(uploadPackResult(pack)), {
             status: 200,
             headers: {
               "content-type": "application/x-git-upload-pack-result",
@@ -98,20 +99,17 @@ describe("Smart HTTP v1 anonymous fetch", () => {
         assert.match(posts[0], new RegExp(`want ${commitId}`));
         assert.equal(posts[0].includes("thin-pack"), false);
 
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
-        const tip = await grits.refs.resolve("refs/remotes/origin/main");
-        assert.deepEqual(tip, {
-          name: "refs/remotes/origin/main",
-          objectId: commitId,
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
+        assert.equal(
+          await gritsGit.resolveRev({
+            repositoryPath: destPath,
+            ref: "refs/remotes/origin/main",
+          }),
+          commitId,
+        );
       });
     });
   });
@@ -171,7 +169,7 @@ describe("Smart HTTP v2 anonymous fetch", () => {
           const method = init?.method ?? "GET";
           const body = Buffer.from(init?.body ?? "").toString("utf8");
           if (method === "GET") {
-            return new Response(v2Advertisement(), {
+            return new Response(nodeHttpBody(v2Advertisement()), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-upload-pack-advertisement",
@@ -180,7 +178,7 @@ describe("Smart HTTP v2 anonymous fetch", () => {
           }
           posts.push(body);
           if (body.includes("command=ls-refs")) {
-            return new Response(lsRefsResult(commitId), {
+            return new Response(nodeHttpBody(lsRefsResult(commitId)), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-upload-pack-result",
@@ -188,14 +186,14 @@ describe("Smart HTTP v2 anonymous fetch", () => {
             });
           }
           if (body.includes("command=fetch")) {
-            return new Response(v2UploadPackResult(pack), {
+            return new Response(nodeHttpBody(v2UploadPackResult(pack)), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-upload-pack-result",
               },
             });
           }
-          return new Response(Buffer.alloc(0), {
+          return new Response(nodeHttpBody(Buffer.alloc(0)), {
             status: 400,
             headers: {
               "content-type": "application/x-git-upload-pack-result",
@@ -209,15 +207,10 @@ describe("Smart HTTP v2 anonymous fetch", () => {
         assert.notEqual(fetchPost, undefined);
         assert.match(fetchPost ?? "", new RegExp(`want ${commitId}`));
 
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
       });
     });
   });
@@ -230,7 +223,7 @@ describe("Smart HTTP v2 anonymous fetch", () => {
           fetchHttps(destPath, "https://example.test/grits.git", async (_url, init) => {
             const method = init?.method ?? "GET";
             if (method === "GET") {
-              return new Response(advertisement(commitId), {
+              return new Response(nodeHttpBody(advertisement(commitId)), {
                 status: 200,
                 headers: {
                   "content-type": "application/x-git-upload-pack-advertisement",

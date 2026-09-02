@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { GritsError } from "../../src/api/errors.js";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { writePackIndex } from "../../src/internal/pack-read.js";
 import { pushHttps } from "../../src/internal/smart-http-push.js";
+import { nodeHttpBody } from "../helpers/node-http-body.js";
 
 const BLOB_TEXT = "packed-hello\n";
 const ZERO = "0".repeat(40);
@@ -79,7 +80,7 @@ describe("Smart HTTP v1 anonymous push", () => {
         const method = init?.method ?? "GET";
         if (method === "GET") {
           assert.match(url, /info\/refs\?service=git-receive-pack$/);
-          return new Response(advertisement(), {
+          return new Response(nodeHttpBody(advertisement()), {
             status: 200,
             headers: {
               "content-type": "application/x-git-receive-pack-advertisement",
@@ -87,7 +88,7 @@ describe("Smart HTTP v1 anonymous push", () => {
           });
         }
         posts.push(Buffer.from(init?.body ?? new Uint8Array()));
-        return new Response(unpackOk(), {
+        return new Response(nodeHttpBody(unpackOk()), {
           status: 200,
           headers: {
             "content-type": "application/x-git-receive-pack-result",
@@ -106,15 +107,10 @@ describe("Smart HTTP v1 anonymous push", () => {
         const packPath = join(destPackDir, "pack-from-push.pack");
         writeFileSync(packPath, packFromPushBody(posts[0]));
         await writePackIndex(packPath);
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
       });
     });
   });
@@ -150,7 +146,7 @@ describe("Smart HTTP v1 anonymous push", () => {
           pushHttps(sourcePath, "https://example.test/grits.git", async (_url, init) => {
             const method = init?.method ?? "GET";
             if (method === "GET") {
-              return new Response(advertisement(), {
+              return new Response(nodeHttpBody(advertisement()), {
                 status: 200,
                 headers: {
                   "content-type": "application/x-git-receive-pack-advertisement",

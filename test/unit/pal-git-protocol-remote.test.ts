@@ -5,11 +5,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 import { writePackIndex } from "../../src/internal/pack-read.js";
+import { isRuntimeString } from "../../src/internal/runtime-type.js";
 
 const BLOB_TEXT = "git-proto-hello\n";
+
+function tcpListenPort(address: string | AddressInfo | null): number {
+  if (address === null) {
+    throw new Error("listen did not bind a TCP port");
+  }
+  if (isRuntimeString(address)) {
+    throw new Error("listen bound a pipe path");
+  }
+  return address.port;
+}
 
 function git(repositoryPath: string, args: readonly string[]): string {
   return execFileSync("git", ["-c", "safe.bareRepository=all", ...args], {
@@ -128,7 +139,7 @@ function listenGitReceivePack(): Promise<{
     });
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address() as AddressInfo;
+      const port = tcpListenPort(server.address());
       resolve({
         url: `git://127.0.0.1:${port}/grits.git`,
         pushed: () => (captured === undefined ? undefined : packFromPushBody(captured)),
@@ -168,7 +179,7 @@ function listenGitUploadPack(advert: Buffer, packResult: Buffer): Promise<{ url:
     });
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address() as AddressInfo;
+      const port = tcpListenPort(server.address());
       resolve({
         url: `git://127.0.0.1:${port}/grits.git`,
         close: () =>
@@ -215,15 +226,10 @@ describe("PAL git protocol remotes", () => {
           }),
           "",
         );
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: dest },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: dest, rev: blobId }),
+          BLOB_TEXT,
+        );
       } finally {
         rmSync(dest, { recursive: true, force: true });
         await daemon.close();
@@ -258,15 +264,10 @@ describe("PAL git protocol remotes", () => {
           });
           assert.equal(tip, commitId);
           assert.equal(git(destPath, ["rev-parse", "refs/remotes/upstream/main"]), commitId);
-          const grits = createGrits({
-            repository: { kind: "filesystem", path: destPath },
-          });
-          const blob = await grits.objects.read(blobId);
-          assert.deepEqual(blob, {
-            kind: "blob",
-            id: blobId,
-            bytes: Array.from(Buffer.from(BLOB_TEXT)),
-          });
+          assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
         });
       } finally {
         await daemon.close();
@@ -306,15 +307,10 @@ describe("PAL git protocol remotes", () => {
           const packPath = join(destPackDir, "pack-from-push.pack");
           writeFileSync(packPath, pack);
           await writePackIndex(packPath);
-          const grits = createGrits({
-            repository: { kind: "filesystem", path: destPath },
-          });
-          const blob = await grits.objects.read(blobId);
-          assert.deepEqual(blob, {
-            kind: "blob",
-            id: blobId,
-            bytes: Array.from(Buffer.from(BLOB_TEXT)),
-          });
+          assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
         });
       } finally {
         await daemon.close();

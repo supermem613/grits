@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createGrits } from "grits";
+import { git } from "grits";
 import { isPlainObject, isRuntimeFunction } from "../../src/internal/runtime-type.js";
 
 const parsedPackage = JSON.parse(
@@ -20,10 +20,7 @@ test("package declaration exposes the built Grits root", () => {
   assert.equal(packageJson.types, "./dist/index.d.ts");
 });
 
-test("package-name import exposes createGrits", () => {
-  assert.equal(isRuntimeFunction(createGrits), true);
-  assert.equal(
-    createGrits({ repository: { kind: "memory" } }).capabilities.repository,
-    "memory",
-  );
+test("package-name import exposes git", () => {
+  assert.equal(isRuntimeFunction(git.hashObjectNoWrite), true);
+  assert.equal(isRuntimeFunction(git.clone), true);
 });

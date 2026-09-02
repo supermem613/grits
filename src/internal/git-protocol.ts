@@ -40,7 +40,13 @@ function encodePkt(payload: string): Buffer {
   return Buffer.concat([Buffer.from(length, "ascii"), body]);
 }
 
-function parseGitProtocolUrl(repositoryUrl: string): { host: string; port: number; path: string } {
+type GitProtocolLocation = {
+  host: string;
+  port: number;
+  path: string;
+};
+
+function parseGitProtocolUrl(repositoryUrl: string): GitProtocolLocation {
   if (/^git:\/\/[^/]*@/i.test(repositoryUrl)) {
     fail("NYI", "NYI: git protocol does not send credentials.");
   }

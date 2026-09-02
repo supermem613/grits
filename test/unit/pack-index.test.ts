@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { writePackIndex } from "../../src/internal/pack-read.js";
+import { isRuntimeString } from "../../src/internal/runtime-type.js";
 
 function git(repositoryPath: string, args: readonly string[]): string {
   return execFileSync("git", [...args], {
@@ -40,31 +41,24 @@ describe("pack index writer", () => {
       git(sourcePath, ["prune-packed"]);
       const packDir = join(sourcePath, ".git", "objects", "pack");
       const packName = readdirSync(packDir).find((name) => name.endsWith(".pack"));
-      assert.equal(typeof packName, "string");
-      if (typeof packName !== "string") {
-        return;
+      if (!isRuntimeString(packName)) {
+        throw new Error("repack did not write a pack file");
       }
+      assert.equal(packName.endsWith(".pack"), true);
 
       await withRepo(async (destPath) => {
         const destPackDir = join(destPath, ".git", "objects", "pack");
         mkdirSync(destPackDir, { recursive: true });
         copyFileSync(join(packDir, packName), join(destPackDir, packName));
         await writePackIndex(join(destPackDir, packName));
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        const first = await grits.objects.read(firstBlob);
-        const second = await grits.objects.read(secondBlob);
-        assert.deepEqual(first, {
-          kind: "blob",
-          id: firstBlob,
-          bytes: Array.from(Buffer.from(base)),
-        });
-        assert.deepEqual(second, {
-          kind: "blob",
-          id: secondBlob,
-          bytes: Array.from(Buffer.from(`${"alpha\n".repeat(40)}changed-tail\n`)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: firstBlob }),
+          base,
+        );
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: secondBlob }),
+          `${"alpha\n".repeat(40)}changed-tail\n`,
+        );
       });
     });
   });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
@@ -181,11 +181,22 @@ describe("history family goldens", () => {
     await withOracleRepo(async (repositoryPath, firstId, secondId) => {
       const oracleTrue = gitIsAncestor(repositoryPath, firstId, secondId);
       const oracleFalse = gitIsAncestor(repositoryPath, secondId, firstId);
-      const grits = createGrits({
-        repository: { kind: "filesystem", path: repositoryPath },
-      });
-      assert.equal(await grits.history.isAncestor(firstId, secondId), oracleTrue);
-      assert.equal(await grits.history.isAncestor(secondId, firstId), oracleFalse);
+      assert.equal(
+        await gritsGit.isAncestor({
+          repositoryPath,
+          rev: firstId,
+          otherRev: secondId,
+        }),
+        oracleTrue ? "true" : "false",
+      );
+      assert.equal(
+        await gritsGit.isAncestor({
+          repositoryPath,
+          rev: secondId,
+          otherRev: firstId,
+        }),
+        oracleFalse ? "true" : "false",
+      );
       assert.equal(oracleTrue, true);
       assert.equal(oracleFalse, false);
     });
@@ -200,12 +211,10 @@ describe("history family goldens", () => {
         "HEAD",
       ]);
       assert.equal(oracleId, secondId);
-      const grits = createGrits({
-        repository: { kind: "filesystem", path: repositoryPath },
-      });
-      const resolved = await grits.refs.resolve("HEAD");
-      assert.equal(resolved?.name, "HEAD");
-      assert.equal(resolved?.objectId, oracleId);
+      assert.equal(
+        await gritsGit.resolveRev({ repositoryPath, ref: "HEAD" }),
+        oracleId,
+      );
     });
   });
 });

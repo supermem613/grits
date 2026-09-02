@@ -5,6 +5,7 @@ import {
   advertisedDefaultBranch,
   lsRemoteHttps,
 } from "../../src/internal/smart-http-ls-remote.js";
+import { nodeHttpBody } from "../helpers/node-http-body.js";
 
 const HEAD_OID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const MAIN_OID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -44,7 +45,7 @@ describe("Smart HTTP v2 ls-remote", () => {
         const method = init?.method ?? "GET";
         requested.push(`${method} ${url}`);
         if (method === "GET") {
-          return new Response(v2Advertisement(), {
+          return new Response(nodeHttpBody(v2Advertisement()), {
             status: 200,
             headers: {
               "content-type": "application/x-git-upload-pack-advertisement",
@@ -52,7 +53,7 @@ describe("Smart HTTP v2 ls-remote", () => {
           });
         }
         posts.push(Buffer.from(init?.body ?? "").toString("utf8"));
-        return new Response(lsRefsResult(), {
+        return new Response(nodeHttpBody(lsRefsResult()), {
           status: 200,
           headers: {
             "content-type": "application/x-git-upload-pack-result",
@@ -101,7 +102,7 @@ describe("Smart HTTP v2 ls-remote", () => {
         lsRemoteHttps("https://example.test/grits.git", async (_url, init) => {
           const method = init?.method ?? "GET";
           if (method === "GET") {
-            return new Response(v2Advertisement(), {
+            return new Response(nodeHttpBody(v2Advertisement()), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-upload-pack-advertisement",

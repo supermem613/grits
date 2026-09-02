@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
 
 const BLOB_TEXT = "file-url-hello\n";
@@ -45,15 +45,10 @@ describe("PAL file URL remotes", () => {
           }),
           "",
         );
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: dest },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: dest, rev: blobId }),
+          BLOB_TEXT,
+        );
       } finally {
         rmSync(dest, { recursive: true, force: true });
       }
@@ -77,15 +72,10 @@ describe("PAL file URL remotes", () => {
           }),
           originTip,
         );
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: localPath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: localPath, rev: blobId }),
+          BLOB_TEXT,
+        );
       });
     });
   });
@@ -120,15 +110,10 @@ describe("PAL file URL remotes", () => {
           "",
         );
         assert.equal(git(barePath, ["rev-parse", "refs/heads/main"]), localTip);
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: barePath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from("file-url-pushed\n")),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: barePath, rev: blobId }),
+          "file-url-pushed\n",
+        );
       } finally {
         rmSync(barePath, { recursive: true, force: true });
         rmSync(localPath, { recursive: true, force: true });

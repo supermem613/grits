@@ -11,11 +11,17 @@ export type LsRemoteResult = {
   protocol: 1 | 2;
 };
 
+export type SmartHttpRequestHeaders = {
+  "content-type"?: string;
+  accept?: string;
+  "Git-Protocol"?: string;
+};
+
 export type FetchLike = (
   url: string,
   init?: {
     method?: string;
-    headers?: Record<string, string>;
+    headers?: SmartHttpRequestHeaders;
     body?: Uint8Array;
   },
 ) => Promise<{
@@ -28,7 +34,7 @@ export async function defaultFetch(
   url: string,
   init?: {
     method?: string;
-    headers?: Record<string, string>;
+    headers?: SmartHttpRequestHeaders;
     body?: Uint8Array;
   },
 ): Promise<{
@@ -102,7 +108,13 @@ function encodePkt(payload: string): Buffer {
   return Buffer.concat([Buffer.from(length, "ascii"), body]);
 }
 
-function parseAdvertisement(buffer: Buffer): { version: 1 | 2; refs: RemoteRef[]; capabilities: string[] } {
+type AdvertisementParse = {
+  version: 1 | 2;
+  refs: RemoteRef[];
+  capabilities: string[];
+};
+
+function parseAdvertisement(buffer: Buffer): AdvertisementParse {
   const lines = readPktLines(buffer);
   let index = 0;
   while (index < lines.length && lines[index] === null) {

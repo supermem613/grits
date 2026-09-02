@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { writePackIndex } from "../../src/internal/pack-read.js";
 import { cloneHttps } from "../../src/internal/clone-local.js";
 import { fetchUpstream, pushFf } from "../../src/internal/remote-sync.js";
+import { nodeHttpBody } from "../helpers/node-http-body.js";
 
 const BLOB_TEXT = "packed-hello\n";
 
@@ -82,14 +83,14 @@ describe("PAL HTTPS remotes", () => {
           async (url, init) => {
             const method = init?.method ?? "GET";
             if (method === "GET") {
-              return new Response(advertisement(commitId), {
+              return new Response(nodeHttpBody(advertisement(commitId)), {
                 status: 200,
                 headers: {
                   "content-type": "application/x-git-upload-pack-advertisement",
                 },
               });
             }
-            return new Response(uploadPackResult(pack), {
+            return new Response(nodeHttpBody(uploadPackResult(pack)), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-upload-pack-result",
@@ -98,15 +99,10 @@ describe("PAL HTTPS remotes", () => {
           },
         );
         assert.equal(tip, commitId);
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
       });
     });
   });
@@ -158,7 +154,7 @@ describe("PAL HTTPS remotes", () => {
         async (url, init) => {
           const method = init?.method ?? "GET";
           if (method === "GET") {
-            return new Response(receiveAdvertisement(), {
+            return new Response(nodeHttpBody(receiveAdvertisement()), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-receive-pack-advertisement",
@@ -166,7 +162,7 @@ describe("PAL HTTPS remotes", () => {
             });
           }
           posts.push(Buffer.from(init?.body ?? new Uint8Array()));
-          return new Response(unpackOk(), {
+          return new Response(nodeHttpBody(unpackOk()), {
             status: 200,
             headers: {
               "content-type": "application/x-git-receive-pack-result",
@@ -182,15 +178,10 @@ describe("PAL HTTPS remotes", () => {
         const packPath = join(destPackDir, "pack-from-push.pack");
         writeFileSync(packPath, packFromPushBody(posts[0]));
         await writePackIndex(packPath);
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
       });
     });
   });
@@ -216,29 +207,24 @@ describe("PAL HTTPS remotes", () => {
         await cloneHttps(destPath, "https://example.test/grits.git", async (_url, init) => {
           const method = init?.method ?? "GET";
           if (method === "GET") {
-            return new Response(advertisement(commitId), {
+            return new Response(nodeHttpBody(advertisement(commitId)), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-upload-pack-advertisement",
               },
             });
           }
-          return new Response(uploadPackResult(pack), {
+          return new Response(nodeHttpBody(uploadPackResult(pack)), {
             status: 200,
             headers: {
               "content-type": "application/x-git-upload-pack-result",
             },
           });
         });
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
       } finally {
         rmSync(destPath, { recursive: true, force: true });
       }
@@ -266,14 +252,14 @@ describe("PAL HTTPS remotes", () => {
         await cloneHttps(destPath, "https://example.test/grits.git", async (_url, init) => {
           const method = init?.method ?? "GET";
           if (method === "GET") {
-            return new Response(advertisement(commitId, "master"), {
+            return new Response(nodeHttpBody(advertisement(commitId, "master")), {
               status: 200,
               headers: {
                 "content-type": "application/x-git-upload-pack-advertisement",
               },
             });
           }
-          return new Response(uploadPackResult(pack), {
+          return new Response(nodeHttpBody(uploadPackResult(pack)), {
             status: 200,
             headers: {
               "content-type": "application/x-git-upload-pack-result",
@@ -282,19 +268,14 @@ describe("PAL HTTPS remotes", () => {
         });
         // Advertised name is the specification. Clone must not hard-code main.
         assert.equal(readFileSync(join(destPath, ".git", "HEAD"), "utf8"), "ref: refs/heads/master\n");
-        const grits = createGrits({
-          repository: { kind: "filesystem", path: destPath },
-        });
-        assert.deepEqual(await grits.refs.resolve("refs/heads/master"), {
-          name: "refs/heads/master",
-          objectId: commitId,
-        });
-        const blob = await grits.objects.read(blobId);
-        assert.deepEqual(blob, {
-          kind: "blob",
-          id: blobId,
-          bytes: Array.from(Buffer.from(BLOB_TEXT)),
-        });
+        assert.equal(
+          await gritsGit.resolveRev({ repositoryPath: destPath, ref: "refs/heads/master" }),
+          commitId,
+        );
+        assert.equal(
+          await gritsGit.catBlob({ repositoryPath: destPath, rev: blobId }),
+          BLOB_TEXT,
+        );
       } finally {
         rmSync(destPath, { recursive: true, force: true });
       }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { createGrits } from "../../src/index.js";
+import { git as gritsGit } from "../../src/index.js";
 import { matchesGritsError } from "../helpers/grits-error.js";
 
 type GitHistoryFixture = {
@@ -46,39 +46,38 @@ function createGitFixture(): GitHistoryFixture {
 
 describe("history.isAncestor", () => {
   it("has memory true, false, same-commit, and typed missing-input behavior", async () => {
-    const grits = createGrits({
-      repository: {
-        kind: "memory",
+    const repository = {
+        kind: "memory" as const,
         seed: {
           objects: [
             {
-              kind: "commit",
+              kind: "commit" as const,
               id: "memory-first",
               tree: "tree-first",
               parents: [],
               message: "first",
             },
             {
-              kind: "commit",
+              kind: "commit" as const,
               id: "memory-second",
               tree: "tree-second",
               parents: ["memory-first"],
               message: "second",
             },
             {
-              kind: "commit",
+              kind: "commit" as const,
               id: "memory-missing-parent",
               tree: "tree-missing-parent",
               parents: ["missing-parent"],
               message: "missing parent",
             },
             {
-              kind: "tree",
+              kind: "tree" as const,
               id: "memory-tree-parent",
               entries: [],
             },
             {
-              kind: "commit",
+              kind: "commit" as const,
               id: "memory-non-commit-parent",
               tree: "tree-non-commit-parent",
               parents: ["memory-tree-parent"],
@@ -86,28 +85,47 @@ describe("history.isAncestor", () => {
             },
           ],
         },
-      },
-    });
+    };
 
-    const publicResult = await grits.history.isAncestor("memory-first", "memory-second");
-    assert.equal(publicResult, true);
+    const publicResult = await gritsGit.isAncestor({
+      repository,
+      rev: "memory-first",
+      otherRev: "memory-second",
+    });
+    assert.equal(publicResult, "true");
     assert.equal(
-      await grits.history.isAncestor("memory-second", "memory-first"),
-      false,
+      await gritsGit.isAncestor({
+        repository,
+        rev: "memory-second",
+        otherRev: "memory-first",
+      }),
+      "false",
     );
     assert.equal(
-      await grits.history.isAncestor("memory-first", "memory-first"),
-      true,
+      await gritsGit.isAncestor({
+        repository,
+        rev: "memory-first",
+        otherRev: "memory-first",
+      }),
+      "true",
     );
 
     await assert.rejects(
-      grits.history.isAncestor("missing-commit", "memory-second"),
+      gritsGit.isAncestor({
+        repository,
+        rev: "missing-commit",
+        otherRev: "memory-second",
+      }),
       (error: Error) => matchesGritsError(error, "NOT_FOUND", "history.isAncestor"),
     );
 
     for (const descendantId of ["memory-missing-parent", "memory-non-commit-parent"]) {
       await assert.rejects(
-        grits.history.isAncestor("memory-first", descendantId),
+        gritsGit.isAncestor({
+          repository,
+          rev: "memory-first",
+          otherRev: descendantId,
+        }),
         (error: Error) => matchesGritsError(error, "NOT_FOUND", "history.isAncestor"),
       );
     }
@@ -116,25 +134,39 @@ describe("history.isAncestor", () => {
   it("has filesystem true, false, and same-commit behavior", async () => {
     const fixture = createGitFixture();
     try {
-      const grits = createGrits({
-        repository: {
-          kind: "filesystem",
-          path: fixture.path,
-        },
-      });
+      const repository = {
+        kind: "filesystem" as const,
+        path: fixture.path,
+      };
 
-      const publicResult = await grits.history.isAncestor(fixture.first, fixture.second);
-      assert.equal(publicResult, true);
+      const publicResult = await gritsGit.isAncestor({
+        repository,
+        rev: fixture.first,
+        otherRev: fixture.second,
+      });
+      assert.equal(publicResult, "true");
       assert.equal(
-        await grits.history.isAncestor(fixture.second, fixture.first),
-        false,
+        await gritsGit.isAncestor({
+          repository,
+          rev: fixture.second,
+          otherRev: fixture.first,
+        }),
+        "false",
       );
       assert.equal(
-        await grits.history.isAncestor(fixture.first, fixture.first),
-        true,
+        await gritsGit.isAncestor({
+          repository,
+          rev: fixture.first,
+          otherRev: fixture.first,
+        }),
+        "true",
       );
       await assert.rejects(
-        grits.history.isAncestor("HEAD", fixture.second),
+        gritsGit.isAncestor({
+          repository,
+          rev: "HEAD",
+          otherRev: fixture.second,
+        }),
         (error: Error) => matchesGritsError(error, "NOT_FOUND", "history.isAncestor"),
       );
     } finally {
