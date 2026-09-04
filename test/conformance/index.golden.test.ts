@@ -93,6 +93,24 @@ describe("index family goldens", () => {
     });
   });
 
+  it("statusFull reads a git index path whose length is 2 mod 8", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const names = ["aa", "bb", "cc"];
+      for (const name of names) {
+        writeFileSync(join(repositoryPath, name), `${name}\n`, "utf8");
+        gitId(repositoryPath, ["add", name]);
+      }
+      gitId(repositoryPath, ["commit", "-m", "two-byte-paths"]);
+      for (const name of names) {
+        writeFileSync(join(repositoryPath, name), `${name}-dirty\n`, "utf8");
+      }
+      assert.equal(
+        await invokePalSlot("index.statusFull", { repositoryPath }),
+        git(repositoryPath, ["status", "--porcelain=v1", "-z"]),
+      );
+    });
+  });
+
   it("statusFull and statusBranch read the linked worktree gitdir index", async () => {
     await withOracleRepo(async (repositoryPath) => {
       const dest = mkdtempSync(join(tmpdir(), "grits-index-linked-dest-"));

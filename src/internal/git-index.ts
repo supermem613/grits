@@ -27,7 +27,7 @@ export async function readIndex(repositoryPath: string): Promise<IndexEntry[]> {
     const nameLength = flags & 0xfff;
     const stage = (flags >> 12) & 3;
     const name = buf.subarray(offset + 62, offset + 62 + nameLength).toString("utf8");
-    const entryLength = 62 + nameLength;
+    const entryLength = 63 + nameLength;
     const padding = (8 - (entryLength % 8)) % 8;
     offset += entryLength + padding;
     entries.push({ mode, size, id, name, stage });
@@ -63,7 +63,7 @@ export async function writeIndexFile(
   parts.push(header);
   for (const entry of sorted) {
     const name = Buffer.from(entry.name, "utf8");
-    const entryLength = 62 + name.length;
+    const entryLength = 63 + name.length;
     const padding = (8 - (entryLength % 8)) % 8;
     const buf = Buffer.alloc(entryLength + padding);
     buf.writeUInt32BE(entry.mode, 24);
