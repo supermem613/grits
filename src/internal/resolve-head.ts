@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { GritsError } from "../api/errors.js";
 
 const OID = /^[0-9a-f]{40}$/i;
@@ -8,12 +8,31 @@ const OID = /^[0-9a-f]{40}$/i;
 export function gitDir(repositoryPath: string): string {
   const nested = join(repositoryPath, ".git");
   if (existsSync(nested)) {
+    if (statSync(nested).isFile()) {
+      const contents = readFileSync(nested, "utf8");
+      const line = contents.split(/\r?\n/).find((value) => /^gitdir:/i.test(value));
+      const match = line === undefined ? null : /^gitdir:\s*(.+)$/i.exec(line);
+      if (match !== null) {
+        return resolve(repositoryPath, match[1].trim());
+      }
+    }
     return nested;
   }
   if (existsSync(join(repositoryPath, "HEAD")) && existsSync(join(repositoryPath, "objects"))) {
     return repositoryPath;
   }
   return nested;
+}
+
+function refsGitDir(repositoryPath: string): string {
+  const localGitDir = gitDir(repositoryPath);
+  const commondirPath = join(localGitDir, "commondir");
+  if (!existsSync(commondirPath)) {
+    return localGitDir;
+  }
+
+  const commondir = readFileSync(commondirPath, "utf8").trim();
+  return commondir.length === 0 ? localGitDir : resolve(localGitDir, commondir);
 }
 
 export async function resolveHead(repositoryPath: string): Promise<string> {
@@ -50,7 +69,7 @@ export async function resolveRef(
   repositoryPath: string,
   refName: string,
 ): Promise<string> {
-  const loosePath = join(gitDir(repositoryPath), ...refName.split("/"));
+  const loosePath = join(refsGitDir(repositoryPath), ...refName.split("/"));
   try {
     const value = (await readFile(loosePath, "utf8")).trim();
     if (OID.test(value)) {
@@ -81,7 +100,7 @@ async function readPackedRef(
 ): Promise<string | null> {
   let packed: string;
   try {
-    packed = await readFile(join(gitDir(repositoryPath), "packed-refs"), "utf8");
+    packed = await readFile(join(refsGitDir(repositoryPath), "packed-refs"), "utf8");
   } catch {
     return null;
   }

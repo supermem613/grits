@@ -98,6 +98,7 @@ describe("index family goldens", () => {
       const dest = mkdtempSync(join(tmpdir(), "grits-index-linked-dest-"));
       rmSync(dest, { recursive: true, force: true });
       try {
+        git(repositoryPath, ["config", "core.autocrlf", "false"]);
         git(repositoryPath, ["worktree", "add", "-b", "grits-linked-status", dest]);
         const [status, branchStatus] = await Promise.all([
           invokePalSlot("index.statusFull", { repositoryPath: dest }),
