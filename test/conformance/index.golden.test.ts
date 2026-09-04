@@ -93,6 +93,27 @@ describe("index family goldens", () => {
     });
   });
 
+  it("statusFull and statusBranch read the linked worktree gitdir index", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const dest = mkdtempSync(join(tmpdir(), "grits-index-linked-dest-"));
+      rmSync(dest, { recursive: true, force: true });
+      try {
+        git(repositoryPath, ["worktree", "add", "-b", "grits-linked-status", dest]);
+        const [status, branchStatus] = await Promise.all([
+          invokePalSlot("index.statusFull", { repositoryPath: dest }),
+          invokePalSlot("index.statusBranch", { repositoryPath: dest }),
+        ]);
+        assert.equal(status, git(dest, ["status", "--porcelain=v1", "-z"]));
+        const branch = gitId(dest, ["rev-parse", "--abbrev-ref", "HEAD"]);
+        const headId = gitId(dest, ["rev-parse", "HEAD"]);
+        assert.match(branchStatus, new RegExp(`# branch\\.head ${branch}`));
+        assert.match(branchStatus, new RegExp(`# branch\\.oid ${headId}`));
+      } finally {
+        rmSync(dest, { recursive: true, force: true });
+      }
+    });
+  });
+
   it("statusFullScoped limits status to one path", async () => {
     await withOracleRepo(async (repositoryPath) => {
       writeFileSync(join(repositoryPath, "index-golden.txt"), "dirty\n", "utf8");
