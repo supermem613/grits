@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { invokePalSlot } from "../../src/conformance/pal-surface-registry.js";
+import { readIndex, writeIndex } from "../../src/internal/git-index.js";
 
 function git(repositoryPath: string, args: readonly string[], stdin?: string): string {
   return execFileSync("git", [...args], {
@@ -107,6 +109,105 @@ describe("index family goldens", () => {
       assert.equal(
         await invokePalSlot("index.statusFull", { repositoryPath }),
         git(repositoryPath, ["status", "--porcelain=v1", "-z"]),
+      );
+    });
+  });
+
+  it("readIndex returns git ls-files names for a DIRC v3 skip-worktree entry", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      gitId(repositoryPath, ["config", "index.version", "3"]);
+      writeFileSync(join(repositoryPath, "tracked.txt"), "tracked\n", "utf8");
+      gitId(repositoryPath, ["add", "tracked.txt"]);
+      gitId(repositoryPath, ["commit", "-m", "dirc-v3"]);
+      gitId(repositoryPath, ["update-index", "--skip-worktree", "tracked.txt"]);
+      assert.deepEqual(
+        (await readIndex(repositoryPath)).map((entry) => entry.name),
+        git(repositoryPath, ["ls-files", "-z"]).split("\0").filter(Boolean),
+      );
+    });
+  });
+
+  it("readIndex returns the full path when DIRC name length is the 0xFFF sentinel", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      // 4096 bytes is past the 12-bit length field. Git stores 0xFFF and a NUL terminator.
+      const longName = "n".repeat(4096);
+      const nameBytes = Buffer.from(longName, "utf8");
+      const entryLength = 63 + nameBytes.length;
+      const padding = (8 - (entryLength % 8)) % 8;
+      const header = Buffer.alloc(12);
+      header.write("DIRC");
+      header.writeUInt32BE(2, 4);
+      header.writeUInt32BE(1, 8);
+      const entry = Buffer.alloc(entryLength + padding);
+      entry.writeUInt32BE(0o100644, 24);
+      entry.writeUInt32BE(nameBytes.length, 36);
+      entry.writeUInt16BE(0xfff, 60);
+      nameBytes.copy(entry, 62);
+      const body = Buffer.concat([header, entry]);
+      writeFileSync(
+        join(repositoryPath, ".git", "index"),
+        Buffer.concat([body, createHash("sha1").update(body).digest()]),
+      );
+      assert.deepEqual(
+        (await readIndex(repositoryPath)).map((item) => item.name),
+        [longName],
+      );
+    });
+  });
+
+  it("writeIndex encodes a 0xFFF long name that git ls-files returns", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const longName = "n".repeat(4096);
+      const blob = gitId(repositoryPath, ["hash-object", "index-golden.txt"]);
+      await writeIndex(repositoryPath, [
+        {
+          mode: 0o100644,
+          size: 13,
+          id: blob,
+          name: longName,
+          stage: 0,
+        },
+      ]);
+      assert.equal(
+        readFileSync(join(repositoryPath, ".git", "index")).readUInt16BE(72) & 0xfff,
+        0xfff,
+      );
+      assert.deepEqual(
+        git(repositoryPath, ["ls-files", "-z"]).split("\0").filter(Boolean),
+        [longName],
+      );
+    });
+  });
+
+  it("readIndex throws for a DIRC version outside 2 through 4", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      const header = Buffer.alloc(12);
+      header.write("DIRC");
+      header.writeUInt32BE(5, 4);
+      header.writeUInt32BE(0, 8);
+      writeFileSync(
+        join(repositoryPath, ".git", "index"),
+        Buffer.concat([header, createHash("sha1").update(header).digest()]),
+      );
+      await assert.rejects(
+        () => readIndex(repositoryPath),
+        { message: "Unsupported git index version" },
+      );
+    });
+  });
+
+  it("readIndex returns git ls-files names for DIRC v4 prefix-compressed paths", async () => {
+    await withOracleRepo(async (repositoryPath) => {
+      gitId(repositoryPath, ["config", "index.version", "4"]);
+      writeFileSync(join(repositoryPath, "src-a.txt"), "a\n", "utf8");
+      writeFileSync(join(repositoryPath, "src-b.txt"), "b\n", "utf8");
+      gitId(repositoryPath, ["add", "src-a.txt", "src-b.txt"]);
+      gitId(repositoryPath, ["commit", "-m", "dirc-v4"]);
+      gitId(repositoryPath, ["update-index", "--index-version", "4"]);
+      assert.equal(readFileSync(join(repositoryPath, ".git", "index")).readUInt32BE(4), 4);
+      assert.deepEqual(
+        (await readIndex(repositoryPath)).map((entry) => entry.name),
+        git(repositoryPath, ["ls-files", "-z"]).split("\0").filter(Boolean),
       );
     });
   });
